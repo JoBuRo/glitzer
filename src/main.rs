@@ -11,4 +11,14 @@ fn main() {
             println!("Failed to parse object: {}", e);
         }
     }
+
+    match glitzer::read_repo(".") {
+        Ok(repo) => {
+            println!("Repository read successfully:");
+            println!("{:?}", repo);
+        }
+        Err(e) => {
+            println!("Failed to read repository: {}", e);
+        }
+    }
 }

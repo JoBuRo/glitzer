@@ -33,3 +33,19 @@ impl fmt::Debug for Object {
         )
     }
 }
+
+pub struct Repository {
+    pub path: String,
+    pub objects: Vec<Object>,
+}
+
+impl fmt::Debug for Repository {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Repository at {}: {} objects",
+            self.path,
+            self.objects.len()
+        )
+    }
+}

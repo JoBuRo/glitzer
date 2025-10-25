@@ -67,6 +67,58 @@ pub fn read_object(file_path: &str) -> Result<Object, String> {
     parse_object(&bytes)
 }
 
+fn read_objetcs(path: &str) -> Result<Vec<Object>, String> {
+    let mut objects = Vec::new();
+    let dir_iter = std::fs::read_dir(path).map_err(|e| e.to_string())?;
+    for dir in dir_iter {
+        if dir.is_err() {
+            println!("Error reading directory entry: {:?}", dir.err());
+            continue;
+        }
+        let subdir_path = dir.unwrap().path();
+        if !subdir_path.is_dir() {
+            continue;
+        }
+        let file_iter = std::fs::read_dir(&subdir_path);
+
+        if file_iter.is_err() {
+            println!(
+                "Error reading subdirectory {:?}: {:?}",
+                subdir_path,
+                file_iter.err()
+            );
+            continue;
+        }
+
+        for file in file_iter.unwrap() {
+            if file.is_err() {
+                println!("Error reading file entry: {:?}", file.err());
+                continue;
+            }
+            let file_path = file.unwrap().path();
+            if !file_path.is_file() {
+                continue;
+            }
+            let object = read_object(
+                file_path
+                    .to_str()
+                    .ok_or("Failed to convert path to string".to_string())?,
+            )?;
+            objects.push(object);
+        }
+    }
+    Ok(objects)
+}
+
+pub fn read_repo(path: &str) -> Result<Repository, String> {
+    let objects_dir = format!("{}/.git/objects", path);
+    let objects = read_objetcs(&objects_dir)?;
+    Ok(Repository {
+        path: path.to_string(),
+        objects: objects,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
