@@ -1,24 +1,23 @@
+use clap::Parser;
 mod glitzer;
 mod model;
 
-fn main() {
-    match glitzer::read_object(".git/objects/80/ff239150a83e68c452ff7b33238e121799b99a") {
-        Ok(object) => {
-            println!("Object parsed successfully:");
-            println!("{:?}", object);
-        }
-        Err(e) => {
-            println!("Failed to parse object: {}", e);
-        }
-    }
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, default_value = ".")]
+    repo: String,
+}
 
-    match glitzer::read_repo(".") {
+fn main() {
+    let args = Args::parse();
+
+    match glitzer::read_repo(&args.repo) {
         Ok(repo) => {
-            println!("Repository read successfully:");
             println!("{:?}", repo);
         }
         Err(e) => {
-            println!("Failed to read repository: {}", e);
+            eprintln!("Error reading repository: {}", e);
         }
     }
 }
