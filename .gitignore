@@ -1,1 +1,4 @@
 /target
+.vscode
+.env
+.git-test
