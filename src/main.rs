@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 mod git_objects;
 mod glitzer;
 mod parser;
@@ -6,16 +6,22 @@ mod repo;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-struct Args {
+struct Cli {
     #[arg(short, long, default_value = ".")]
     repo: String,
 
-    #[arg(short, long)]
-    object: Option<String>,
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    Object { hash: String },
+    History,
 }
 
 fn main() {
-    let args = Args::parse();
+    let args = Cli::parse();
 
     let repo_result = glitzer::get_repo(&args.repo);
 
@@ -28,44 +34,34 @@ fn main() {
 
     println!("{:?}\n", repo);
 
-    if let Some(object_hash) = args.object {
-        let object_res = repo.get_object(&object_hash);
+    match &args.command {
+        Some(Commands::Object { hash }) => {
+            let object_res = repo.get_object(hash);
 
-        if object_res.is_err() {
-            eprintln!(
-                "Error getting object {}: {}",
-                object_hash,
-                object_res.err().unwrap()
-            );
-
-            let raw_object_res = repo.get_raw_object(&object_hash);
-
-            if raw_object_res.is_err() {
+            if object_res.is_err() {
                 eprintln!(
-                    "Error getting raw object {}: {}",
-                    object_hash,
-                    raw_object_res.err().unwrap()
+                    "Error getting object {}: {}",
+                    hash,
+                    object_res.err().unwrap()
                 );
                 return;
             }
 
-            println!("Raw Object {}:\n{:?}", object_hash, raw_object_res.unwrap());
-            return;
+            let object = object_res.unwrap();
+            println!("Object {}:\n{:?}", &hash[0..7], object);
         }
+        Some(Commands::History) => {
+            let commits_res = repo.get_commits();
 
-        let object = object_res.unwrap();
-        println!("Object {}:\n{:?}", object_hash, object);
-        return;
-    }
+            if commits_res.is_err() {
+                eprintln!("Error getting commits: {}", commits_res.err().unwrap());
+                return;
+            }
 
-    let commits_res = repo.get_commits();
-
-    if commits_res.is_err() {
-        eprintln!("Error getting commits: {}", commits_res.err().unwrap());
-        return;
-    }
-
-    for commit in commits_res.unwrap() {
-        println!("{:?}\n", commit);
+            for commit in commits_res.unwrap() {
+                println!("{:?}\n", commit);
+            }
+        }
+        None => {}
     }
 }

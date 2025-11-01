@@ -4,8 +4,8 @@ use std::fmt;
 
 #[derive(Debug)]
 pub struct Blob {
-    pub hash: String,
-    pub content: Bytes,
+    pub _hash: String,
+    pub _content: Bytes,
 }
 
 #[derive(Debug)]
@@ -40,10 +40,19 @@ impl fmt::Debug for Commit {
     }
 }
 
-#[derive(Debug)]
 pub struct Tree {
     pub hash: String,
     pub entries: Vec<TreeEntry>,
+}
+
+impl fmt::Debug for Tree {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Tree {}:", &self.hash[..7])?;
+        for entry in &self.entries {
+            writeln!(f, "  {} {} {}", entry.mode, entry.name, entry.hash)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -53,11 +62,20 @@ pub struct TreeEntry {
     pub name: String,
 }
 
-#[derive(Debug)]
 pub enum GitObject {
     Blob(Blob),
     Tree(Tree),
     Commit(Commit),
+}
+
+impl fmt::Debug for GitObject {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GitObject::Blob(blob) => write!(f, "{:?}", blob),
+            GitObject::Tree(tree) => write!(f, "{:?}", tree),
+            GitObject::Commit(commit) => write!(f, "{:?}", commit),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]

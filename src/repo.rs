@@ -18,7 +18,7 @@ impl Repository {
         read_object(&file_path).map_err(|e| format!("Failed to read object {}: {}", hash, e))
     }
 
-    pub fn get_raw_object(&self, hash: &str) -> Result<RawObject, String> {
+    pub fn _get_raw_object(&self, hash: &str) -> Result<RawObject, String> {
         let file_path = format!("{}/.git/objects/{}/{}", self.path, &hash[0..2], &hash[2..]);
         println!("{}", file_path);
         read_raw_object(&file_path)
@@ -155,8 +155,8 @@ pub fn read_object(file_path: &str) -> Result<GitObject, String> {
 
     match object.header.object_type {
         ObjectType::Blob => Ok(GitObject::Blob(Blob {
-            hash: object.hash.clone(),
-            content: object.content.clone(),
+            _hash: object.hash.clone(),
+            _content: object.content.clone(),
         })),
         ObjectType::Tree => {
             let tree = parse_tree(&object.content[..], &object.hash)?;
@@ -191,19 +191,6 @@ mod tests {
         assert_eq!(object.header.size, 14);
         assert_eq!(object.content, Bytes::from(&b"Hello, Glitzer!"[..]));
     }
-
-    // #[test]
-    // fn test_parse_repo() {
-    //     let repo = read_repo("test-repo").unwrap();
-
-    //     assert_eq!(repo.objects.len(), 53);
-
-    //     let tree_object = repo
-    //         .get_object("428aaae4e4d5cae8a06eb482e428fc950d6ca85b")
-    //         .unwrap();
-
-    //     assert_eq!(tree_object.content, Bytes::from(&b"100644 blob ea8c4bf7f35f6f77f75d92ad8ce8349f6e81ddba    .gitignore\n100644 blob 091aeb6c81d4273b80688d1d89a1eb6a43ef8323    Cargo.lock\n100644 blob 93fb79eb2be36527672cce1d7953328ee4620590    Cargo.toml\n100644 blob 261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64    LICENSE\n040000 tree 305157a396c6858705a9cb625bab219053264ee4    src"[..]));
-    // }
 
     #[test]
     fn test_parse_object_invalid_header_missing_size() {
