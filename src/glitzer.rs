@@ -1,17 +1,20 @@
+use std::collections::HashMap;
 use std::io::Read;
 
 use crate::model::*;
+use crate::parser::*;
 use bytes::Bytes;
 use flate2::read::ZlibDecoder;
 use hex;
 use sha1::{Digest, Sha1};
 
 fn read_bytes(file_path: &str) -> Result<Bytes, String> {
-    let data = std::fs::read(file_path).expect("Failed to read file");
+    let data = std::fs::read(file_path).map_err(|e| e.to_string())?;
     let mut decoder = ZlibDecoder::new(&data[..]);
     let mut decoded_bytes = Vec::new();
+    // read_to_end expects &mut Vec<u8>
     decoder
-        .read_to_end(decoded_bytes.as_mut())
+        .read_to_end(&mut decoded_bytes)
         .map_err(|e| e.to_string())?;
     Ok(Bytes::from(decoded_bytes))
 }
@@ -23,10 +26,10 @@ fn parse_header(header_str: &str) -> Result<ObjectHeader, String> {
     let size_str = parts.next().ok_or("Missing size".to_string())?;
 
     let object_type = match object_type_str {
-        "blob" => ObejctType::Blob,
-        "tree" => ObejctType::Tree,
-        "commit" => ObejctType::Commit,
-        "tag" => ObejctType::AnnotatedTag,
+        "blob" => ObjectType::Blob,
+        "tree" => ObjectType::Tree,
+        "commit" => ObjectType::Commit,
+        "tag" => ObjectType::AnnotatedTag,
         _ => return Err("Unknown object type".to_string()),
     };
 
@@ -43,9 +46,9 @@ fn get_hash(content: &Bytes) -> String {
     hex::encode(hash_bytes)
 }
 
-fn parse_object(bytes: &Bytes) -> Result<Object, String> {
+fn parse_object(bytes: &Bytes) -> Result<RawObject, String> {
     let hash = get_hash(&bytes);
-    let mut bytes_split = bytes.split(|&b| b == 0);
+    let mut bytes_split = bytes.splitn(2, |&b| b == 0);
 
     let header_bytes = bytes_split.next().ok_or("Missing header".to_string())?;
 
@@ -55,20 +58,48 @@ fn parse_object(bytes: &Bytes) -> Result<Object, String> {
 
     let content = bytes_split.next().ok_or("Missing content".to_string())?;
 
-    Ok(Object {
+    Ok(RawObject {
         hash,
         header,
         content: Bytes::from(content.to_vec()),
     })
 }
 
-pub fn read_object(file_path: &str) -> Result<Object, String> {
+fn read_raw_object(file_path: &str) -> Result<RawObject, String> {
     let bytes = read_bytes(file_path)?;
     parse_object(&bytes)
 }
 
-fn read_objetcs(path: &str) -> Result<Vec<Object>, String> {
-    let mut objects = Vec::new();
+pub fn read_object(file_path: &str) -> Result<GitObject, String> {
+    let object = read_raw_object(file_path)?;
+
+    match object.header.object_type {
+        ObjectType::Blob => Ok(GitObject::Blob(Blob {
+            hash: object.hash.clone(),
+            content: object.content.clone(),
+        })),
+        ObjectType::Tree => {
+            Ok(GitObject::Tree(Tree {
+                hash: object.hash.clone(),
+                entries: vec![], // Placeholder
+            }))
+        }
+        ObjectType::Commit => {
+            let body = std::str::from_utf8(&object.content[..]).map_err(|err| {
+                format!(
+                    "Failed to convert commit content to UTF-8 string for {}: {}",
+                    &object.hash, err
+                )
+            })?;
+            let commit = parse_commit(object.hash, body)?;
+            Ok(GitObject::Commit(commit))
+        }
+        ObjectType::AnnotatedTag => Err("AnnotatedTag coercion not implemented".to_string()),
+    }
+}
+
+fn read_objetcs(path: &str) -> Result<HashMap<String, RawObject>, String> {
+    let mut objects = HashMap::new();
     let dir_iter = std::fs::read_dir(path).map_err(|e| e.to_string())?;
     for dir in dir_iter {
         if dir.is_err() {
@@ -99,12 +130,12 @@ fn read_objetcs(path: &str) -> Result<Vec<Object>, String> {
             if !file_path.is_file() {
                 continue;
             }
-            let object = read_object(
+            let object = read_raw_object(
                 file_path
                     .to_str()
                     .ok_or("Failed to convert path to string".to_string())?,
             )?;
-            objects.push(object);
+            objects.insert(object.hash.clone(), object);
         }
     }
     Ok(objects)
@@ -130,10 +161,23 @@ mod tests {
         assert!(result.is_ok());
         let object = result.unwrap();
         assert_eq!(object.hash, get_hash(&bytes));
-        assert_eq!(object.header.object_type, ObejctType::Blob);
+        assert_eq!(object.header.object_type, ObjectType::Blob);
         assert_eq!(object.header.size, 14);
         assert_eq!(object.content, Bytes::from(&b"Hello, Glitzer!"[..]));
     }
+
+    // #[test]
+    // fn test_parse_repo() {
+    //     let repo = read_repo("test-repo").unwrap();
+
+    //     assert_eq!(repo.objects.len(), 53);
+
+    //     let tree_object = repo
+    //         .get_object("428aaae4e4d5cae8a06eb482e428fc950d6ca85b")
+    //         .unwrap();
+
+    //     assert_eq!(tree_object.content, Bytes::from(&b"100644 blob ea8c4bf7f35f6f77f75d92ad8ce8349f6e81ddba    .gitignore\n100644 blob 091aeb6c81d4273b80688d1d89a1eb6a43ef8323    Cargo.lock\n100644 blob 93fb79eb2be36527672cce1d7953328ee4620590    Cargo.toml\n100644 blob 261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64    LICENSE\n040000 tree 305157a396c6858705a9cb625bab219053264ee4    src"[..]));
+    // }
 
     #[test]
     fn test_parse_object_invalid_header_missing_size() {
