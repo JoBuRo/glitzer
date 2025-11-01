@@ -37,7 +37,6 @@ pub struct Tree {
 #[derive(Debug)]
 pub struct TreeEntry {
     pub mode: String,
-    pub object_type: ObjectType,
     pub hash: String,
     pub name: String,
 }

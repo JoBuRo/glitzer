@@ -79,10 +79,8 @@ pub fn read_object(file_path: &str) -> Result<GitObject, String> {
             content: object.content.clone(),
         })),
         ObjectType::Tree => {
-            Ok(GitObject::Tree(Tree {
-                hash: object.hash.clone(),
-                entries: vec![], // Placeholder
-            }))
+            let tree = parse_tree(&object.content[..], &object.hash)?;
+            Ok(GitObject::Tree(tree))
         }
         ObjectType::Commit => {
             let body = std::str::from_utf8(&object.content[..]).map_err(|err| {

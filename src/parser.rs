@@ -1,17 +1,20 @@
-use crate::model::{Author, Commit};
+use crate::model::{Author, Commit, Tree, TreeEntry};
 use chrono::prelude::*;
 use nom::Err;
 use nom::IResult;
-use nom::bytes::complete::{tag, take_until};
-use nom::character::complete::{hex_digit1, newline};
+use nom::Parser;
+use nom::bytes::complete::{tag, take, take_until};
+use nom::character::complete::{alphanumeric1, digit1, hex_digit1, newline, space1};
 use nom::error::Error;
+use nom::error::ParseError;
+use nom::multi::many1;
 
-pub fn tree(input: &str) -> IResult<&str, &str> {
+fn tree(input: &str) -> IResult<&str, &str> {
     let (input, _) = tag("tree ")(input)?;
     hash(input)
 }
 
-pub fn parent(input: &str) -> IResult<&str, &str> {
+fn parent(input: &str) -> IResult<&str, &str> {
     let (input, _) = tag("parent ")(input)?;
     hash(input)
 }
@@ -38,6 +41,47 @@ fn author<'a, 'b>(input: &'a str, author_tag: &'b str) -> IResult<&'a str, Autho
 fn timestamp(input: &str) -> IResult<&str, &str> {
     let (input, ts_str) = take_until("\n")(input)?;
     return Ok((input, ts_str));
+}
+
+fn hash_bytes(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    take(20usize)(input) // 20 bytes for SHA-1
+}
+
+fn tree_entry(input: &[u8]) -> IResult<&[u8], TreeEntry> {
+    let (input, mode) = digit1(input)?;
+    let (input, _) = space1(input)?;
+    let (input, name) = take_until(&b"\0"[..])(input)?;
+    let (input, _) = tag(&b"\0"[..])(input)?;
+    let (input, hash_bytes) = take(20usize)(input)?; // 20 bytes for SHA-1
+
+    let hash = hex::encode(hash_bytes);
+    let mode_str = std::str::from_utf8(mode)
+        .map_err(|e| Err::Error(Error::from_error_kind(input, nom::error::ErrorKind::Verify)))?;
+
+    let name_str = std::str::from_utf8(name)
+        .map_err(|e| Err::Error(Error::from_error_kind(input, nom::error::ErrorKind::Alpha)))?;
+
+    Ok((
+        input,
+        TreeEntry {
+            mode: mode_str.to_string(),
+            hash: hash,
+            name: name_str.to_string(),
+        },
+    ))
+}
+
+pub fn parse_tree(input: &[u8], hash: &str) -> Result<Tree, String> {
+    let (input, entries) = many1(tree_entry)
+        .parse(input)
+        .map_err(|err| err.to_string())?;
+
+    assert_eq!(input.len(), 0, "Did not consume all input");
+
+    Ok(Tree {
+        hash: hash.to_string(),
+        entries: entries,
+    })
 }
 
 fn parse_timestamp(ts_str: &str) -> Result<DateTime<FixedOffset>, String> {
@@ -118,5 +162,29 @@ mod tests {
                 .with_timezone(&Utc)
         );
         assert_eq!(commit.message, "Read Repository and objects\n".to_string());
+    }
+
+    #[test]
+    fn test_parse_tree() {
+        let tree_bytes = b"100644 .gitignore\0\xec\x1f\xa2\x087\xc3\x83\xc8\xf0\xb4\x98\x0e\xf7$#|\xd6\xcd\rC100644 Cargo.lock\0\xaa\xfe\xff\xcb|\x10>\xfc\x1aPu\xe0AX\xa7\x87eV\x95\x8a100644 Cargo.toml\0\xb4To\0Kd\x95\x9b\xa1\xe7\naMx\x90\xe9\xb4)\xf1\x92100644 LICENSE\0&\x1e\xeb\x9e\x9f\x8b+K\r\x11\x93f\xdd\xa9\x9co\xd7\xd3\\d40000 src\0\xf9\x85\xf1\x93\xba\x83,\xc1;\x9d|\xa7\x9b<\x1c6\x9cT\xe6=";
+
+        let tree_res = parse_tree(tree_bytes, "c0ffee");
+
+        if !tree_res.is_ok() {
+            println!("Error: {}", tree_res.err().unwrap());
+            assert_eq!(true, false);
+            return;
+        }
+
+        let tree = tree_res.unwrap();
+
+        assert_eq!(tree.hash, "c0ffee".to_string());
+        assert_eq!(tree.entries.len(), 5);
+        assert_eq!(tree.entries[0].mode, "100644".to_string());
+        assert_eq!(tree.entries[0].name, ".gitignore".to_string());
+        assert_eq!(
+            tree.entries[0].hash,
+            "ec1fa20837c383c8f0b4980ef724237cd6cd0d43".to_string()
+        );
     }
 }
