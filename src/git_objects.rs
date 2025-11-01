@@ -1,7 +1,5 @@
-use crate::parser::parse_commit;
 use bytes::Bytes;
 use chrono::prelude::*;
-use std::collections::HashMap;
 use std::fmt;
 
 #[derive(Debug)]
@@ -16,16 +14,30 @@ pub struct Author {
     pub email: String,
 }
 
-#[derive(Debug)]
 pub struct Commit {
     pub hash: String,
-    pub parent: String,
+    pub parent: Option<String>,
     pub tree: String,
     pub message: String,
     pub author: Author,
     pub authored_at: DateTime<Utc>,
-    pub committer: Author,
-    pub committed_at: DateTime<Utc>,
+    pub _committer: Author,
+    pub _committed_at: DateTime<Utc>,
+}
+
+impl fmt::Debug for Commit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Commit {}:\n  Tree: {}\n  Author: {} <{}>\n  Date: {}\n  Message: {}\n",
+            &self.hash[..7],
+            self.tree,
+            self.author.name,
+            self.author.email,
+            self.authored_at,
+            self.message
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -67,11 +79,6 @@ pub struct RawObject {
     pub content: Bytes,
 }
 
-fn parse_commit_from_body(body: &str, hash: &str) -> Result<Commit, String> {
-    let commit = parse_commit(hash.to_string(), body)?;
-    Ok(commit)
-}
-
 impl fmt::Debug for RawObject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -81,28 +88,6 @@ impl fmt::Debug for RawObject {
             self.header.object_type,
             self.header.size,
             self.content
-        )
-    }
-}
-
-pub struct Repository {
-    pub path: String,
-    pub objects: HashMap<String, RawObject>,
-}
-
-impl Repository {
-    pub fn get_object(&self, hash: &str) -> Option<&RawObject> {
-        self.objects.get(hash)
-    }
-}
-
-impl fmt::Debug for Repository {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Repository at {}: {} objects",
-            self.path,
-            self.objects.len()
         )
     }
 }

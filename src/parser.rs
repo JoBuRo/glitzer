@@ -1,29 +1,34 @@
-use crate::model::{Author, Commit, Tree, TreeEntry};
+use crate::git_objects::{Author, Commit, Tree, TreeEntry};
 use chrono::prelude::*;
 use nom::Err;
 use nom::IResult;
 use nom::Parser;
 use nom::bytes::complete::{tag, take, take_until};
-use nom::character::complete::{alphanumeric1, digit1, hex_digit1, newline, space1};
+use nom::character::complete::{digit1, hex_digit1, newline, space1};
+use nom::combinator::opt;
 use nom::error::Error;
 use nom::error::ParseError;
 use nom::multi::many1;
 
 fn tree(input: &str) -> IResult<&str, &str> {
     let (input, _) = tag("tree ")(input)?;
-    hash(input)
+    let (input, hash_value) = hash(input)?;
+    let (input, _) = newline(input)?;
+    Ok((input, hash_value))
 }
 
 fn parent(input: &str) -> IResult<&str, &str> {
     let (input, _) = tag("parent ")(input)?;
-    hash(input)
+    let (input, hash_value) = hash(input)?;
+    let (input, _) = newline(input)?;
+    Ok((input, hash_value))
 }
 
 fn hash(input: &str) -> IResult<&str, &str> {
     hex_digit1(input)
 }
 
-fn author<'a, 'b>(input: &'a str, author_tag: &'b str) -> IResult<&'a str, Author> {
+fn author<'a>(input: &'a str, author_tag: &str) -> IResult<&'a str, Author> {
     let (input, _) = tag(author_tag)(input)?;
     let (input, name) = take_until(" <")(input)?;
     let (input, _) = tag(" <")(input)?;
@@ -38,13 +43,17 @@ fn author<'a, 'b>(input: &'a str, author_tag: &'b str) -> IResult<&'a str, Autho
     ))
 }
 
-fn timestamp(input: &str) -> IResult<&str, &str> {
-    let (input, ts_str) = take_until("\n")(input)?;
-    return Ok((input, ts_str));
+fn gpgsig(input: &str) -> IResult<&str, &str> {
+    let (input, _) = tag("gpgsig ")(input)?;
+    let (input, sig_block) = take_until("\n\n")(input)?;
+    let (input, _) = tag("\n")(input)?;
+    Ok((input, sig_block))
 }
 
-fn hash_bytes(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    take(20usize)(input) // 20 bytes for SHA-1
+fn timestamp(input: &str) -> IResult<&str, &str> {
+    let (input, ts_str) = take_until("\n")(input)?;
+    let (input, _) = newline(input)?;
+    Ok((input, ts_str))
 }
 
 fn tree_entry(input: &[u8]) -> IResult<&[u8], TreeEntry> {
@@ -56,16 +65,16 @@ fn tree_entry(input: &[u8]) -> IResult<&[u8], TreeEntry> {
 
     let hash = hex::encode(hash_bytes);
     let mode_str = std::str::from_utf8(mode)
-        .map_err(|e| Err::Error(Error::from_error_kind(input, nom::error::ErrorKind::Verify)))?;
+        .map_err(|_| Err::Error(Error::from_error_kind(input, nom::error::ErrorKind::Verify)))?;
 
     let name_str = std::str::from_utf8(name)
-        .map_err(|e| Err::Error(Error::from_error_kind(input, nom::error::ErrorKind::Alpha)))?;
+        .map_err(|_| Err::Error(Error::from_error_kind(input, nom::error::ErrorKind::Alpha)))?;
 
     Ok((
         input,
         TreeEntry {
             mode: mode_str.to_string(),
-            hash: hash,
+            hash,
             name: name_str.to_string(),
         },
     ))
@@ -80,7 +89,7 @@ pub fn parse_tree(input: &[u8], hash: &str) -> Result<Tree, String> {
 
     Ok(Tree {
         hash: hash.to_string(),
-        entries: entries,
+        entries,
     })
 }
 
@@ -91,32 +100,29 @@ fn parse_timestamp(ts_str: &str) -> Result<DateTime<FixedOffset>, String> {
 
 pub fn parse_commit(hash: String, input: &str) -> Result<Commit, String> {
     let (input, commit_tree) = tree(input).map_err(|err| err.to_string())?;
-    let (input, _) = newline(input).map_err(|err: Err<Error<&str>>| err.to_string())?;
-    let (input, commit_parent) = parent(input).map_err(|err| err.to_string())?;
-    let (input, _) = newline(input).map_err(|err: Err<Error<&str>>| err.to_string())?;
+    let (input, commit_parent) = opt(parent).parse(input).map_err(|err| err.to_string())?;
     let (input, commit_author) = author(input, "author ").map_err(|err| err.to_string())?;
     let (input, ts_str) = timestamp(input).map_err(|err| err.to_string())?;
 
     let author_dt = parse_timestamp(ts_str)?;
-
-    let (input, _) = newline(input).map_err(|err: Err<Error<&str>>| err.to_string())?;
 
     let (input, comitter) = author(input, "committer ").map_err(|err| err.to_string())?;
     let (input, ts_str) = timestamp(input).map_err(|err| err.to_string())?;
 
     let committed_at = parse_timestamp(ts_str)?;
 
-    let (input, _) = newline(input).map_err(|err: Err<Error<&str>>| err.to_string())?;
+    let (input, _) = opt(gpgsig).parse(input).map_err(|err| err.to_string())?;
+
     let (input, _) = newline(input).map_err(|err: Err<Error<&str>>| err.to_string())?;
 
     Ok(Commit {
         tree: commit_tree.to_string(),
-        parent: commit_parent.to_string(),
+        parent: commit_parent.map(|p| p.to_string()),
         author: commit_author,
         authored_at: author_dt.to_utc(),
-        committer: comitter,
-        committed_at: committed_at.to_utc(),
-        hash: hash,
+        _committer: comitter,
+        _committed_at: committed_at.to_utc(),
+        hash,
         message: input.to_string(),
     })
 }
@@ -148,7 +154,7 @@ mod tests {
         );
         assert_eq!(
             commit.parent,
-            "fe013499538f359bb0c8d9ec204f9f96d7d3d372".to_string()
+            Some("fe013499538f359bb0c8d9ec204f9f96d7d3d372".to_string())
         );
         assert_eq!(commit.author.name, "Johannes Herrmann".to_string());
         assert_eq!(
@@ -162,6 +168,44 @@ mod tests {
                 .with_timezone(&Utc)
         );
         assert_eq!(commit.message, "Read Repository and objects\n".to_string());
+    }
+
+    #[test]
+    fn test_parse_github_commit() {
+        let commit_str = b"tree 8f57a99980891ccc68701b94b94342f7ae0e02d6\nauthor Joe <Johannes.R.Herrmann@gmail.com> 1761379929 +0200\ncommitter GitHub <noreply@github.com> 1761379929 +0200\ngpgsig -----BEGIN PGP SIGNATURE-----\n \n <cert> \n -----END PGP SIGNATURE-----\n \n\nInitial commit";
+        let commit_res = parse_commit(
+            "c0ffee".to_string(),
+            std::str::from_utf8(commit_str).unwrap(),
+        );
+
+        if !commit_res.is_ok() {
+            println!("Error: {}", commit_res.err().unwrap());
+            assert_eq!(true, false);
+            return;
+        }
+
+        // assert_eq!(commit_res.err(), None);
+        let commit = commit_res.unwrap();
+        assert_eq!(commit.hash, "c0ffee".to_string());
+        assert_eq!(
+            commit.tree,
+            "8f57a99980891ccc68701b94b94342f7ae0e02d6".to_string()
+        );
+        assert_eq!(commit.parent, None);
+        assert_eq!(commit.author.name, "Joe".to_string());
+        assert_eq!(
+            commit.author.email,
+            "Johannes.R.Herrmann@gmail.com".to_string()
+        );
+        assert_eq!(commit._committer.name, "GitHub".to_string());
+        assert_eq!(commit._committer.email, "noreply@github.com".to_string());
+        assert_eq!(
+            commit.authored_at,
+            DateTime::parse_from_rfc3339("2025-10-25T10:12:09+02:00")
+                .unwrap()
+                .with_timezone(&Utc)
+        );
+        assert_eq!(commit.message, "Initial commit".to_string());
     }
 
     #[test]

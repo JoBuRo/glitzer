@@ -1,7 +1,8 @@
 use clap::Parser;
+mod git_objects;
 mod glitzer;
-mod model;
 mod parser;
+mod repo;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -16,7 +17,7 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    let repo_result = glitzer::read_repo(&args.repo);
+    let repo_result = glitzer::get_repo(&args.repo);
 
     if repo_result.is_err() {
         eprintln!("Error reading repository: {}", repo_result.err().unwrap());
@@ -25,16 +26,46 @@ fn main() {
 
     let repo = repo_result.unwrap();
 
-    println!("Loaded repo\n{:?}", repo);
+    println!("{:?}\n", repo);
 
     if let Some(object_hash) = args.object {
-        match repo.get_object(&object_hash) {
-            Some(object) => {
-                println!("Found object:\n{:?}", object);
+        let object_res = repo.get_object(&object_hash);
+
+        if object_res.is_err() {
+            eprintln!(
+                "Error getting object {}: {}",
+                object_hash,
+                object_res.err().unwrap()
+            );
+
+            let raw_object_res = repo.get_raw_object(&object_hash);
+
+            if raw_object_res.is_err() {
+                eprintln!(
+                    "Error getting raw object {}: {}",
+                    object_hash,
+                    raw_object_res.err().unwrap()
+                );
+                return;
             }
-            None => {
-                println!("Object with hash {} not found in repository.", object_hash);
-            }
+
+            println!("Raw Object {}:\n{:?}", object_hash, raw_object_res.unwrap());
+            return;
         }
+
+        let object = object_res.unwrap();
+        println!("Object {}:\n{:?}", object_hash, object);
+        return;
+    }
+
+    let commits_res = repo.get_commits();
+
+    if commits_res.is_err() {
+        eprintln!("Error getting commits: {}", commits_res.err().unwrap());
+        return;
+    }
+
+    for commit in commits_res.unwrap() {
+        println!("{:?}\n", commit);
     }
 }
