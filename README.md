@@ -6,6 +6,8 @@
 **Glitzer** is a Rust-based command-line tool for exploring Git repositories.
 Its goal is to provide fast, insightful Git statistics and repository analysis — though it’s still early in development.
 
+[![Build](https://github.com/JoBuRo/glitzer/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/JoBuRo/glitzer/actions/workflows/rust.yml)
+
 > ⚠️ **Note:** Most functionality is not yet implemented.
 > Currently, Glitzer supports:
 >
