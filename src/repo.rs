@@ -156,7 +156,7 @@ pub fn read_object(file_path: &str) -> Result<GitObject, String> {
     match object.header.object_type {
         ObjectType::Blob => Ok(GitObject::Blob(Blob {
             _hash: object.hash.clone(),
-            _content: object.content.clone(),
+            content: object.content.clone(),
         })),
         ObjectType::Tree => {
             let tree = parse_tree(&object.content[..], &object.hash)?;

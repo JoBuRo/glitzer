@@ -1,4 +1,4 @@
-use crate::git_objects::{Author, Commit, Tree, TreeEntry};
+use crate::git_objects::*;
 use chrono::prelude::*;
 use nom::Err;
 use nom::IResult;
@@ -70,10 +70,24 @@ fn tree_entry(input: &[u8]) -> IResult<&[u8], TreeEntry> {
     let name_str = std::str::from_utf8(name)
         .map_err(|_| Err::Error(Error::from_error_kind(input, nom::error::ErrorKind::Alpha)))?;
 
+    let mode = match mode_str {
+        "100644" => EntryMode::Text,
+        "100755" => EntryMode::Exe,
+        "120000" => EntryMode::Symlink,
+        "40000" => EntryMode::Tree,
+        "160000" => EntryMode::Gitlink,
+        _ => {
+            return Err(Err::Error(Error::from_error_kind(
+                input,
+                nom::error::ErrorKind::Verify,
+            )));
+        }
+    };
+
     Ok((
         input,
         TreeEntry {
-            mode: mode_str.to_string(),
+            mode,
             hash,
             name: name_str.to_string(),
         },
@@ -81,11 +95,18 @@ fn tree_entry(input: &[u8]) -> IResult<&[u8], TreeEntry> {
 }
 
 pub fn parse_tree(input: &[u8], hash: &str) -> Result<Tree, String> {
-    let (input, entries) = many1(tree_entry)
+    let (input, mut entries) = many1(tree_entry)
         .parse(input)
         .map_err(|err| err.to_string())?;
 
-    assert_eq!(input.len(), 0, "Did not consume all input");
+    assert_eq!(
+        input.len(),
+        0,
+        "Did not consume all input, rest: {:?}",
+        input
+    );
+
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
 
     Ok(Tree {
         hash: hash.to_string(),
@@ -224,7 +245,7 @@ mod tests {
 
         assert_eq!(tree.hash, "c0ffee".to_string());
         assert_eq!(tree.entries.len(), 5);
-        assert_eq!(tree.entries[0].mode, "100644".to_string());
+        assert_eq!(tree.entries[0].mode, EntryMode::Text);
         assert_eq!(tree.entries[0].name, ".gitignore".to_string());
         assert_eq!(
             tree.entries[0].hash,

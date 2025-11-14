@@ -1,4 +1,7 @@
 use clap::{Parser, Subcommand};
+
+use crate::diff::diff_commits;
+mod diff;
 mod git_objects;
 mod glitzer;
 mod parser;
@@ -18,6 +21,7 @@ struct Cli {
 enum Commands {
     Object { hash: String },
     History,
+    Changes,
 }
 
 fn main() {
@@ -61,6 +65,43 @@ fn main() {
             for commit in commits_res.unwrap() {
                 println!("{:?}\n", commit);
             }
+        }
+        Some(Commands::Changes) => {
+            let commits_res = repo.get_commits();
+
+            if commits_res.is_err() {
+                eprintln!("Error getting commits: {}", commits_res.err().unwrap());
+                return;
+            }
+            let mut lines_added: i64 = 0;
+            let mut lines_removed: i64 = 0;
+
+            let commits = commits_res.unwrap();
+
+            for (i, commit) in commits.iter().enumerate() {
+                if i > 0 {
+                    let last_commit = &commits[i - 1];
+                    let diff_res =
+                        diff_commits(&commit, last_commit, &|h: &str| repo.get_object(h));
+
+                    if diff_res.is_err() {
+                        println!(
+                            "Could not get diff between commit {} and {}",
+                            last_commit.hash, commit.hash
+                        );
+                        continue;
+                    }
+
+                    let diff = diff_res.unwrap();
+
+                    lines_added += diff.added as i64;
+                    lines_removed += diff.removed as i64;
+                }
+            }
+
+            println!("Lines added: {}", lines_added);
+            println!("Lines removed: {}", lines_removed);
+            println!("Lines total: {}", lines_added - lines_removed);
         }
         None => {}
     }
