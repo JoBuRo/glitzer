@@ -1,5 +1,4 @@
-use crate::repo::*;
-
-pub fn get_repo(path: &str) -> Result<Repository, String> {
-    read_repo(path)
-}
+mod diff;
+pub mod git_objects;
+mod parser;
+pub mod repo;

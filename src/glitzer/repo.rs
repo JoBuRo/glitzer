@@ -1,5 +1,5 @@
-use crate::git_objects::*;
-use crate::parser::*;
+use super::git_objects::*;
+use super::parser::*;
 use bytes::Bytes;
 use flate2::read::ZlibDecoder;
 use sha1::{Digest, Sha1};

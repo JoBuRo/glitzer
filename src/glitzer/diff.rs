@@ -1,4 +1,4 @@
-use crate::git_objects::*;
+use super::git_objects::*;
 use similar::{ChangeTag, TextDiff};
 
 pub struct CommitDiff {
