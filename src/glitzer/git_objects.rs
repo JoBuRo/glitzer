@@ -8,12 +8,13 @@ pub struct Blob {
     pub content: Bytes,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Author {
     pub name: String,
     pub email: String,
 }
 
+#[derive(Clone)]
 pub struct Commit {
     pub hash: String,
     pub parent: Option<String>,

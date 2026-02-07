@@ -1,3 +1,4 @@
+mod history;
 mod log;
 
 use std::io;
@@ -6,6 +7,7 @@ use color_eyre::eyre::{Result, eyre};
 use crossterm::event;
 use ratatui::{
     Frame,
+    layout::Margin,
     prelude::*,
     style::Stylize,
     symbols::border,
@@ -14,12 +16,14 @@ use ratatui::{
 };
 
 use super::glitzer::repo::Repository;
+use history::History;
 use log::Log;
 
 #[derive(Debug)]
 pub struct App {
     repo: Repository,
     log: Log,
+    history: History,
 }
 
 impl App {
@@ -31,9 +35,11 @@ impl App {
                 commits_res.err().unwrap()
             ));
         }
+        let commits = commits_res.unwrap();
         Ok(App {
             repo,
-            log: Log::new(commits_res.unwrap()),
+            log: Log::new(commits.clone()),
+            history: History { commits },
         })
     }
 
@@ -59,6 +65,7 @@ impl App {
             .split(outer_layout[0]);
         frame.render_widget(self, frame.area());
         frame.render_widget(&self.log, upper_layout[1]);
+        frame.render_widget(&self.history, outer_layout[1].inner(Margin::new(1, 1)));
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
