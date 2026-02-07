@@ -15,19 +15,19 @@ use ratatui::{
     widgets::{Block, Widget},
 };
 
-use super::glitzer::repo::Repository;
+use super::glitzer::repo::RepositoryAccess;
 use history::History;
 use log::Log;
 
 #[derive(Debug)]
-pub struct App {
-    repo: Repository,
+pub struct App<R: RepositoryAccess> {
+    repo: R,
     log: Log,
     history: History,
 }
 
-impl App {
-    pub fn new(repo: Repository) -> Result<Self> {
+impl<R: RepositoryAccess> App<R> {
+    pub fn new(repo: R) -> Result<Self> {
         let commits_res = repo.get_commits();
         if commits_res.is_err() {
             return Err(eyre!(
@@ -81,7 +81,7 @@ impl App {
     }
 }
 
-impl Widget for &App {
+impl<R: RepositoryAccess> Widget for &App<R> {
     fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer) {
         let title = Line::from("  ✨ Glitzer ✨ ".bold());
 

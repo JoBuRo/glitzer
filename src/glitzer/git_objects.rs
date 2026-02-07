@@ -2,9 +2,9 @@ use bytes::Bytes;
 use chrono::prelude::*;
 use std::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Blob {
-    pub _hash: String,
+    pub hash: String,
     pub content: Bytes,
 }
 
@@ -43,6 +43,7 @@ impl fmt::Debug for Commit {
     }
 }
 
+#[derive(Clone)]
 pub struct Tree {
     pub hash: String,
     pub entries: Vec<TreeEntry>,
@@ -65,14 +66,14 @@ impl fmt::Debug for Tree {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TreeEntry {
     pub mode: EntryMode,
     pub hash: String,
     pub name: String,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum EntryMode {
     Text,
     Exe,
@@ -81,6 +82,7 @@ pub enum EntryMode {
     Gitlink,
 }
 
+#[derive(Clone)]
 pub enum GitObject {
     Blob(Blob),
     Tree(Tree),

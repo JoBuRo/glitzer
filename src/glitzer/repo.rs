@@ -8,26 +8,25 @@ use sha1::{Digest, Sha1};
 use std::fmt;
 use std::io::Read;
 
+pub trait RepositoryAccess {
+    fn get_object(&self, hash: &str) -> Result<GitObject>;
+    fn get_commits(&self) -> Result<Vec<Commit>>;
+    fn get_path(&self) -> &str;
+}
+
 pub struct Repository {
     pub path: String,
     head: String,
     current_branch: String,
 }
 
-impl Repository {
-    pub fn get_object(&self, hash: &str) -> Result<GitObject, String> {
+impl RepositoryAccess for Repository {
+    fn get_object(&self, hash: &str) -> Result<GitObject> {
         let file_path = format!("{}/.git/objects/{}/{}", self.path, &hash[0..2], &hash[2..]);
-        read_object(&file_path).map_err(|e| format!("Failed to read object {}: {}", hash, e))
+        read_object(&file_path)
     }
 
-    pub fn _get_raw_object(&self, hash: &str) -> Result<RawObject, String> {
-        let file_path = format!("{}/.git/objects/{}/{}", self.path, &hash[0..2], &hash[2..]);
-        println!("{}", file_path);
-        read_raw_object(&file_path)
-            .map_err(|e| format!("Failed to read raw object {}: {}", hash, e))
-    }
-
-    pub fn get_commits(&self) -> Result<Vec<Commit>, String> {
+    fn get_commits(&self) -> Result<Vec<Commit>> {
         let mut commits = Vec::new();
         let mut current_hash_opt = Some(self.head.clone());
 
@@ -40,7 +39,7 @@ impl Repository {
                     commits.push(commit);
                 }
                 _ => {
-                    return Err(format!(
+                    return Err(eyre!(
                         "Expected commit object, found different type for hash {}",
                         current_hash
                     ));
@@ -49,6 +48,36 @@ impl Repository {
         }
 
         Ok(commits)
+    }
+
+    fn get_path(&self) -> &str {
+        &self.path
+    }
+}
+
+impl Repository {
+    pub fn new(path: String) -> Result<Self> {
+        let head_path = format!("{}/.git/HEAD", path);
+        let head_content = std::fs::read_to_string(&head_path)
+            .wrap_err_with(|| format!("Failed to read HEAD file at {}", head_path))?;
+
+        let ref_path = head_content[5..].trim();
+        let full_ref_path = format!("{}/.git/{}", path, ref_path);
+        let ref_content = std::fs::read_to_string(&full_ref_path)
+            .wrap_err_with(|| format!("Failed to read reference file at {}", full_ref_path))?;
+        let head_hash = ref_content.trim().to_string();
+
+        let current_branch = ref_path
+            .strip_prefix("refs/heads/")
+            .unwrap_or(ref_path)
+            .to_string();
+
+        let repo = Repository {
+            path: path.to_string(),
+            head: head_hash,
+            current_branch,
+        };
+        Ok(repo)
     }
 }
 
@@ -60,30 +89,6 @@ impl fmt::Debug for Repository {
             self.path, self.current_branch
         )
     }
-}
-
-pub fn read_repo(path: &str) -> Result<Repository> {
-    let head_path = format!("{}/.git/HEAD", path);
-    let head_content = std::fs::read_to_string(&head_path)
-        .wrap_err_with(|| format!("Failed to read HEAD file at {}", head_path))?;
-
-    let ref_path = head_content[5..].trim();
-    let full_ref_path = format!("{}/.git/{}", path, ref_path);
-    let ref_content = std::fs::read_to_string(&full_ref_path)
-        .wrap_err_with(|| format!("Failed to read reference file at {}", full_ref_path))?;
-    let head_hash = ref_content.trim().to_string();
-
-    let current_branch = ref_path
-        .strip_prefix("refs/heads/")
-        .unwrap_or(ref_path)
-        .to_string();
-
-    let repo = Repository {
-        path: path.to_string(),
-        head: head_hash,
-        current_branch,
-    };
-    Ok(repo)
 }
 
 fn read_bytes(file_path: &str) -> Result<Bytes> {
@@ -151,7 +156,7 @@ pub fn read_object(file_path: &str) -> Result<GitObject> {
 
     match object.header.object_type {
         ObjectType::Blob => Ok(GitObject::Blob(Blob {
-            _hash: object.hash.clone(),
+            hash: object.hash.clone(),
             content: object.content.clone(),
         })),
         ObjectType::Tree => {

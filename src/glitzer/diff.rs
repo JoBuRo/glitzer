@@ -108,11 +108,11 @@ mod tests {
         // Test case 1: No changes
         let old_blob = Blob {
             content: Bytes::from("Hello\nWorld\n"),
-            _hash: "".to_string(),
+            hash: "".to_string(),
         };
         let new_blob = Blob {
             content: Bytes::from("Hello\nWorld\n"),
-            _hash: "".to_string(),
+            hash: "".to_string(),
         };
         let diff = diff_blob(&old_blob, &new_blob).unwrap();
         assert_eq!(diff.added, 0);
@@ -124,11 +124,11 @@ mod tests {
         // Test case 2: Added lines
         let old_blob = Blob {
             content: Bytes::from("Hello\nWorld\n"),
-            _hash: "".to_string(),
+            hash: "".to_string(),
         };
         let new_blob = Blob {
             content: Bytes::from("Hello\nBeautiful\nWorld\n"),
-            _hash: "".to_string(),
+            hash: "".to_string(),
         };
         let diff = diff_blob(&old_blob, &new_blob).unwrap();
         assert_eq!(diff.added, 1);
@@ -140,11 +140,11 @@ mod tests {
         // Test case 3: Removed lines
         let old_blob = Blob {
             content: Bytes::from("Hello\nBeautiful\nWorld\n"),
-            _hash: "".to_string(),
+            hash: "".to_string(),
         };
         let new_blob = Blob {
             content: Bytes::from("Hello\nWorld\n"),
-            _hash: "".to_string(),
+            hash: "".to_string(),
         };
         let diff = diff_blob(&old_blob, &new_blob).unwrap();
         assert_eq!(diff.added, 0);
@@ -156,11 +156,11 @@ mod tests {
         // Test case 4: Both additions and removals
         let old_blob = Blob {
             content: Bytes::from("Hello\nOld\nWorld\n"),
-            _hash: "".to_string(),
+            hash: "".to_string(),
         };
         let new_blob = Blob {
             content: Bytes::from("Hello\nNew\nWorld\n"),
-            _hash: "".to_string(),
+            hash: "".to_string(),
         };
         let diff = diff_blob(&old_blob, &new_blob).unwrap();
         assert_eq!(diff.added, 1);
@@ -172,11 +172,11 @@ mod tests {
         // Test case 5: Invalid UTF-8
         let old_blob = Blob {
             content: Bytes::from(vec![0xFF, 0xFF]),
-            _hash: "".to_string(),
+            hash: "".to_string(),
         };
         let new_blob = Blob {
             content: Bytes::from("Hello"),
-            _hash: "".to_string(),
+            hash: "".to_string(),
         };
         assert!(diff_blob(&old_blob, &new_blob).is_err());
     }
@@ -185,11 +185,11 @@ mod tests {
         match hash {
             "text1" => Ok(GitObject::Blob(Blob {
                 content: Bytes::from("Hello\nWorld\n"),
-                _hash: "text1".to_string(),
+                hash: "text1".to_string(),
             })),
             "text2" => Ok(GitObject::Blob(Blob {
                 content: Bytes::from("Hello\nNew\nWorld\n"),
-                _hash: "text2".to_string(),
+                hash: "text2".to_string(),
             })),
             "tree1" => Ok(GitObject::Tree(Tree {
                 entries: vec![],
