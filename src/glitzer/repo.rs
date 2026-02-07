@@ -1,6 +1,8 @@
 use super::git_objects::*;
 use super::parser::*;
 use bytes::Bytes;
+use color_eyre::eyre::eyre;
+use color_eyre::{Result, eyre::WrapErr};
 use flate2::read::ZlibDecoder;
 use sha1::{Digest, Sha1};
 use std::fmt;
@@ -60,19 +62,15 @@ impl fmt::Debug for Repository {
     }
 }
 
-pub fn read_repo(path: &str) -> Result<Repository, String> {
+pub fn read_repo(path: &str) -> Result<Repository> {
     let head_path = format!("{}/.git/HEAD", path);
     let head_content = std::fs::read_to_string(&head_path)
-        .map_err(|err| format!("Failed to read HEAD file at {}: {}", head_path, err))?;
+        .wrap_err_with(|| format!("Failed to read HEAD file at {}", head_path))?;
 
     let ref_path = head_content[5..].trim();
     let full_ref_path = format!("{}/.git/{}", path, ref_path);
-    let ref_content = std::fs::read_to_string(&full_ref_path).map_err(|err| {
-        format!(
-            "Failed to read reference file at {}: {}",
-            full_ref_path, err
-        )
-    })?;
+    let ref_content = std::fs::read_to_string(&full_ref_path)
+        .wrap_err_with(|| format!("Failed to read reference file at {}", full_ref_path))?;
     let head_hash = ref_content.trim().to_string();
 
     let current_branch = ref_path
@@ -88,32 +86,30 @@ pub fn read_repo(path: &str) -> Result<Repository, String> {
     Ok(repo)
 }
 
-fn read_bytes(file_path: &str) -> Result<Bytes, String> {
-    let data = std::fs::read(file_path).map_err(|e| e.to_string())?;
+fn read_bytes(file_path: &str) -> Result<Bytes> {
+    let data = std::fs::read(file_path)?;
     let mut decoder = ZlibDecoder::new(&data[..]);
     let mut decoded_bytes = Vec::new();
     // read_to_end expects &mut Vec<u8>
-    decoder
-        .read_to_end(&mut decoded_bytes)
-        .map_err(|e| e.to_string())?;
+    decoder.read_to_end(&mut decoded_bytes)?;
     Ok(Bytes::from(decoded_bytes))
 }
 
-fn parse_header(header_str: &str) -> Result<ObjectHeader, String> {
+fn parse_header(header_str: &str) -> Result<ObjectHeader> {
     let mut parts = header_str.split(' ');
 
-    let object_type_str = parts.next().ok_or("Missing object type".to_string())?;
-    let size_str = parts.next().ok_or("Missing size".to_string())?;
+    let object_type_str = parts.next().ok_or(eyre!("Missing object type"))?;
+    let size_str = parts.next().ok_or(eyre!("Missing size"))?;
 
     let object_type = match object_type_str {
         "blob" => ObjectType::Blob,
         "tree" => ObjectType::Tree,
         "commit" => ObjectType::Commit,
         "tag" => ObjectType::AnnotatedTag,
-        _ => return Err("Unknown object type".to_string()),
+        _ => return Err(eyre!("Unknown object type: {}", object_type_str)),
     };
 
-    let size = size_str.parse::<u64>().map_err(|e| e.to_string())?;
+    let size = size_str.parse::<u64>()?;
 
     Ok(ObjectHeader { object_type, size })
 }
@@ -126,17 +122,17 @@ fn get_hash(content: &Bytes) -> String {
     hex::encode(hash_bytes)
 }
 
-fn parse_object(bytes: &Bytes) -> Result<RawObject, String> {
+fn parse_object(bytes: &Bytes) -> Result<RawObject> {
     let hash = get_hash(bytes);
     let mut bytes_split = bytes.splitn(2, |&b| b == 0);
 
-    let header_bytes = bytes_split.next().ok_or("Missing header".to_string())?;
+    let header_bytes = bytes_split.next().ok_or(eyre!("Missing header"))?;
 
-    let header_str = std::str::from_utf8(header_bytes).map_err(|e| e.to_string())?;
+    let header_str = std::str::from_utf8(header_bytes)?;
 
     let header = parse_header(header_str)?;
 
-    let content = bytes_split.next().ok_or("Missing content".to_string())?;
+    let content = bytes_split.next().ok_or(eyre!("Missing content"))?;
 
     Ok(RawObject {
         hash,
@@ -145,12 +141,12 @@ fn parse_object(bytes: &Bytes) -> Result<RawObject, String> {
     })
 }
 
-fn read_raw_object(file_path: &str) -> Result<RawObject, String> {
+fn read_raw_object(file_path: &str) -> Result<RawObject> {
     let bytes = read_bytes(file_path)?;
     parse_object(&bytes)
 }
 
-pub fn read_object(file_path: &str) -> Result<GitObject, String> {
+pub fn read_object(file_path: &str) -> Result<GitObject> {
     let object = read_raw_object(file_path)?;
 
     match object.header.object_type {
@@ -163,16 +159,11 @@ pub fn read_object(file_path: &str) -> Result<GitObject, String> {
             Ok(GitObject::Tree(tree))
         }
         ObjectType::Commit => {
-            let body = std::str::from_utf8(&object.content[..]).map_err(|err| {
-                format!(
-                    "Failed to convert commit content to UTF-8 string for {}: {}",
-                    &object.hash, err
-                )
-            })?;
+            let body = std::str::from_utf8(&object.content[..])?;
             let commit = parse_commit(object.hash, body)?;
             Ok(GitObject::Commit(commit))
         }
-        ObjectType::AnnotatedTag => Err("AnnotatedTag coercion not implemented".to_string()),
+        ObjectType::AnnotatedTag => Err(eyre!("AnnotatedTag coercion not implemented")),
     }
 }
 
@@ -197,8 +188,8 @@ mod tests {
         let bytes = Bytes::from(&b"blob\0Hello, Glitzer!"[..]);
         let result = parse_object(&bytes);
         assert!(result.is_err());
-        let err = result.err().unwrap();
-        assert_eq!(err, "Missing size");
+        let report = result.err().unwrap();
+        assert!(report.to_string().contains("Missing size"));
     }
 
     #[test]
@@ -206,8 +197,8 @@ mod tests {
         let bytes = Bytes::from(&b"invalid_header 5\0Hello, Glitzer!"[..]);
         let result = parse_object(&bytes);
         assert!(result.is_err());
-        let err = result.err().unwrap();
-        assert_eq!(err, "Unknown object type");
+        let report = result.err().unwrap();
+        assert!(report.to_string().contains("Unknown object type"));
     }
 
     #[test]
@@ -215,7 +206,7 @@ mod tests {
         let bytes = Bytes::from(&b"\xFF\xFF\xFF 5\0Hello, Glitzer!"[..]);
         let result = parse_object(&bytes);
         assert!(result.is_err());
-        let err = result.err().unwrap();
-        assert!(err.contains("invalid utf-8"));
+        let report = result.err().unwrap();
+        assert!(report.to_string().contains("invalid utf-8"));
     }
 }

@@ -95,47 +95,52 @@ fn tree_entry(input: &[u8]) -> IResult<&[u8], TreeEntry> {
     ))
 }
 
-pub fn parse_tree(input: &[u8], hash: &str) -> Result<Tree, String> {
-    let (input, mut entries) = many1(tree_entry)
+pub fn parse_tree(input: &[u8], hash: &str) -> Result<Tree> {
+    match many1(tree_entry).parse(input) {
+        Ok((input, mut entries)) => {
+            if input.len() != 0 {
+                return Err(eyre!(
+                    "Did not consume all input, rest: {:?}",
+                    std::str::from_utf8(input)
+                ));
+            }
+
+            entries.sort_by(|a, b| a.name.cmp(&b.name));
+
+            return Ok(Tree {
+                hash: hash.to_string(),
+                entries,
+            });
+        }
+        Err(err) => {
+            return Err(eyre!("Failed to parse tree object: {:?}", err));
+        }
+    }
+}
+
+fn parse_timestamp(ts_str: &str) -> Result<DateTime<FixedOffset>> {
+    Ok(DateTime::parse_from_str(ts_str, "%s %z")?)
+}
+
+pub fn parse_commit(hash: String, input: &str) -> Result<Commit> {
+    let (input, commit_tree) = tree(input).map_err(|err| eyre!(err.to_string()))?;
+    let (input, commit_parent) = opt(parent)
         .parse(input)
-        .map_err(|err| err.to_string())?;
-
-    assert_eq!(
-        input.len(),
-        0,
-        "Did not consume all input, rest: {:?}",
-        input
-    );
-
-    entries.sort_by(|a, b| a.name.cmp(&b.name));
-
-    Ok(Tree {
-        hash: hash.to_string(),
-        entries,
-    })
-}
-
-fn parse_timestamp(ts_str: &str) -> Result<DateTime<FixedOffset>, String> {
-    DateTime::parse_from_str(ts_str, "%s %z")
-        .map_err(|err| format!("Failed to parse timestamp from {}: {}", ts_str, err))
-}
-
-pub fn parse_commit(hash: String, input: &str) -> Result<Commit, String> {
-    let (input, commit_tree) = tree(input).map_err(|err| err.to_string())?;
-    let (input, commit_parent) = opt(parent).parse(input).map_err(|err| err.to_string())?;
-    let (input, commit_author) = author(input, "author ").map_err(|err| err.to_string())?;
-    let (input, ts_str) = timestamp(input).map_err(|err| err.to_string())?;
+        .map_err(|err| eyre!(err.to_string()))?;
+    let (input, commit_author) = author(input, "author ").map_err(|err| eyre!(err.to_string()))?;
+    let (input, ts_str) = timestamp(input).map_err(|err| eyre!(err.to_string()))?;
 
     let author_dt = parse_timestamp(ts_str)?;
 
-    let (input, comitter) = author(input, "committer ").map_err(|err| err.to_string())?;
-    let (input, ts_str) = timestamp(input).map_err(|err| err.to_string())?;
+    let (input, comitter) = author(input, "committer ").map_err(|err| eyre!(err.to_string()))?;
+    let (input, ts_str) = timestamp(input).map_err(|err| eyre!(err.to_string()))?;
 
     let committed_at = parse_timestamp(ts_str)?;
 
-    let (input, _) = opt(gpgsig).parse(input).map_err(|err| err.to_string())?;
-
-    let (input, _) = newline(input).map_err(|err: Err<Error<&str>>| err.to_string())?;
+    let (input, _) = opt(gpgsig)
+        .parse(input)
+        .map_err(|err| eyre!(err.to_string()))?;
+    let (input, _) = newline(input).map_err(|err: Err<Error<&str>>| eyre!(err.to_string()))?;
 
     Ok(Commit {
         tree: commit_tree.to_string(),
