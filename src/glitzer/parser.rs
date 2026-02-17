@@ -148,7 +148,7 @@ pub fn parse_commit(hash: String, input: &str) -> Result<Commit> {
         author: commit_author,
         authored_at: author_dt.to_utc(),
         _committer: comitter,
-        _committed_at: committed_at.to_utc(),
+        committed_at: committed_at.to_utc(),
         hash,
         message: input.to_string(),
     })

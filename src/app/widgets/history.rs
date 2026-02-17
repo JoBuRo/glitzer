@@ -1,7 +1,8 @@
 use ratatui::{
     prelude::*,
     symbols::border,
-    widgets::{Bar, BarChart, BarGroup, Widget},
+    text::Line,
+    widgets::{Bar, BarChart, BarGroup, Block, Widget},
 };
 
 use crate::glitzer::git_objects::Commit;
@@ -18,13 +19,13 @@ impl History {
 }
 
 impl Widget for &History {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer) {
+    fn render(self, area: Rect, buf: &mut Buffer) {
         // Placeholder rendering logic for History widget
-        let title = ratatui::text::Line::from("  📜 Commit History 📜 ".bold());
+        let title = Line::from("  📜 Commit History 📜 ".bold());
 
-        let block = ratatui::widgets::Block::bordered()
+        let block = Block::bordered()
             .title(title.centered())
-            .border_set(border::THICK);
+            .border_set(border::PLAIN);
 
         let buckets = buckets_for_days(&self.commits);
 

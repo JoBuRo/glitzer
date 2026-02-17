@@ -23,7 +23,7 @@ pub struct Commit {
     pub author: Author,
     pub authored_at: DateTime<Utc>,
     pub _committer: Author,
-    pub _committed_at: DateTime<Utc>,
+    pub committed_at: DateTime<Utc>,
 }
 
 impl fmt::Debug for Commit {

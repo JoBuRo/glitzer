@@ -243,7 +243,7 @@ mod tests {
                 author: author.clone(),
                 authored_at: chrono::Utc::now(),
                 _committer: author,
-                _committed_at: chrono::Utc::now(),
+                committed_at: chrono::Utc::now(),
             }])
         }
 
