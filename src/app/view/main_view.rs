@@ -1,7 +1,8 @@
+use super::super::widgets::authors::Authors;
 use super::super::widgets::history::History;
 use super::super::widgets::log::Log;
 use super::View;
-use crate::glitzer::{git_objects::Commit, repo::RepositoryAccess};
+use crate::glitzer::git_objects::Commit;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     prelude::*,
@@ -13,13 +14,15 @@ use ratatui::{
 pub struct MainView {
     log: Log,
     history: History,
+    authors: Authors,
 }
 
 impl MainView {
     pub fn new(commits: Vec<Commit>) -> Self {
         MainView {
             log: Log::new(commits.clone()),
-            history: History::new(commits),
+            history: History::new(commits.clone()),
+            authors: Authors::new(commits),
         }
     }
 }
@@ -44,6 +47,7 @@ impl View for MainView {
             .margin(1)
             .split(outer_layout[0]);
         frame.render_widget(block, frame.area());
+        frame.render_widget(&self.authors, upper_layout[0]);
         frame.render_widget(&self.log, upper_layout[1]);
         frame.render_widget(&self.history, outer_layout[1].inner(Margin::new(1, 1)));
     }
