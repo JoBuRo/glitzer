@@ -4,11 +4,11 @@ use ratatui::{
     widgets::{Bar, BarChart, BarGroup, Widget},
 };
 
-use super::super::glitzer::git_objects::Commit;
+use crate::glitzer::git_objects::Commit;
 
 #[derive(Debug)]
 pub struct History {
-    pub commits: Vec<Commit>,
+    commits: Vec<Commit>,
 }
 
 impl History {

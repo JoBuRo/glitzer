@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, List, ListItem, Widget},
 };
 
-use super::super::glitzer::git_objects::Commit;
+use crate::glitzer::git_objects::Commit;
 
 #[derive(Debug)]
 pub struct Log {
@@ -14,7 +14,7 @@ pub struct Log {
 }
 
 impl Widget for &Log {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer) {
+    fn render(self, area: Rect, buf: &mut Buffer) {
         let title = Line::from("  🪵 Commit Log 🪵 ".bold());
 
         let block = Block::bordered()

@@ -1,5 +1,5 @@
-mod history;
-mod log;
+mod view;
+mod widgets;
 
 use std::io;
 
@@ -16,18 +16,14 @@ use ratatui::{
 };
 
 use super::glitzer::repo::RepositoryAccess;
-use history::History;
-use log::Log;
+use view::{View, main_view::MainView};
 
-#[derive(Debug)]
-pub struct App<R: RepositoryAccess> {
-    repo: R,
-    log: Log,
-    history: History,
+pub struct App {
+    current_view: Box<dyn View>,
 }
 
-impl<R: RepositoryAccess> App<R> {
-    pub fn new(repo: R) -> Result<Self> {
+impl App {
+    pub fn new(repo: impl RepositoryAccess) -> Result<Self> {
         let commits_res = repo.get_commits();
         if commits_res.is_err() {
             return Err(eyre!(
@@ -37,9 +33,7 @@ impl<R: RepositoryAccess> App<R> {
         }
         let commits = commits_res.unwrap();
         Ok(App {
-            repo,
-            log: Log::new(commits.clone()),
-            history: History { commits },
+            current_view: Box::new(MainView::new(commits)),
         })
     }
 
@@ -54,18 +48,7 @@ impl<R: RepositoryAccess> App<R> {
     }
 
     fn render(&self, frame: &mut Frame) {
-        let outer_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-            .split(frame.area());
-        let upper_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-            .margin(1)
-            .split(outer_layout[0]);
-        frame.render_widget(self, frame.area());
-        frame.render_widget(&self.log, upper_layout[1]);
-        frame.render_widget(&self.history, outer_layout[1].inner(Margin::new(1, 1)));
+        self.current_view.render(frame);
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
@@ -78,19 +61,5 @@ impl<R: RepositoryAccess> App<R> {
             _ => {}
         }
         Ok(())
-    }
-}
-
-impl<R: RepositoryAccess> Widget for &App<R> {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer) {
-        let title = Line::from("  ✨ Glitzer ✨ ".bold());
-
-        let instructions = Line::from(vec![" Quit ".into(), "<Q> ".blue().bold()]);
-
-        Block::bordered()
-            .title(title.centered())
-            .title_bottom(instructions.centered())
-            .border_set(border::THICK)
-            .render(area, buf);
     }
 }
