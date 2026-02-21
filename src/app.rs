@@ -5,15 +5,7 @@ use std::io;
 
 use color_eyre::eyre::{Result, eyre};
 use crossterm::event;
-use ratatui::{
-    Frame,
-    layout::Margin,
-    prelude::*,
-    style::Stylize,
-    symbols::border,
-    text::Line,
-    widgets::{Block, Widget},
-};
+use ratatui::{Frame, prelude::*};
 
 use super::glitzer::repo::RepositoryAccess;
 use view::{View, main_view::MainView};
@@ -54,9 +46,7 @@ impl App {
     fn handle_events(&mut self) -> io::Result<()> {
         match event::read()? {
             event::Event::Key(key_event) => {
-                if key_event.code == event::KeyCode::Char('q') {
-                    std::process::exit(0);
-                }
+                self.current_view.handle_input(key_event);
             }
             _ => {}
         }
