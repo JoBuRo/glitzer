@@ -1,5 +1,5 @@
 use crossterm::event::KeyEvent;
-use ratatui::{Frame, prelude::*};
+use ratatui::Frame;
 
 pub mod main_view;
 

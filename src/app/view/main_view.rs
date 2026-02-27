@@ -2,7 +2,10 @@ use super::super::widgets::authors::Authors;
 use super::super::widgets::history::History;
 use super::super::widgets::log::Log;
 use super::View;
-use crate::{app::widgets::SelectableWidget, glitzer::git_objects::Commit};
+use crate::{
+    app::widgets::SelectableWidget,
+    glitzer::{author::Author, git_objects::Commit},
+};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -27,11 +30,11 @@ pub struct MainView {
 }
 
 impl MainView {
-    pub fn new(commits: Vec<Commit>) -> Self {
+    pub fn new(commits: Vec<Commit>, authors: Vec<Author>) -> Self {
         MainView {
             log: Log::new(commits.clone()),
             history: History::new(commits.clone()),
-            authors: Authors::new(commits),
+            authors: Authors::new(authors),
             selected: None,
         }
     }

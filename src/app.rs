@@ -3,9 +3,9 @@ mod widgets;
 
 use std::io;
 
-use color_eyre::eyre::{Result, eyre};
+use color_eyre::eyre::Result;
 use crossterm::event;
-use ratatui::{Frame, prelude::*};
+use ratatui::Frame;
 
 use super::glitzer::repo::RepositoryAccess;
 use view::{View, main_view::MainView};
@@ -16,16 +16,10 @@ pub struct App {
 
 impl App {
     pub fn new(repo: impl RepositoryAccess) -> Result<Self> {
-        let commits_res = repo.get_commits();
-        if commits_res.is_err() {
-            return Err(eyre!(
-                "Failed to get commits: {}",
-                commits_res.err().unwrap()
-            ));
-        }
-        let commits = commits_res.unwrap();
+        let commits = repo.get_commits()?;
+        let authors = repo.get_authors()?;
         Ok(App {
-            current_view: Box::new(MainView::new(commits)),
+            current_view: Box::new(MainView::new(commits, authors)),
         })
     }
 
@@ -44,11 +38,8 @@ impl App {
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
-        match event::read()? {
-            event::Event::Key(key_event) => {
-                self.current_view.handle_input(key_event);
-            }
-            _ => {}
+        if let event::Event::Key(key_event) = event::read()? {
+            self.current_view.handle_input(key_event);
         }
         Ok(())
     }

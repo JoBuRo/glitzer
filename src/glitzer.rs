@@ -1,3 +1,4 @@
+pub mod author;
 pub mod diff;
 mod file_tree;
 pub mod git_objects;

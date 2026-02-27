@@ -20,5 +20,5 @@ fn main() -> Result<()> {
     let repo = Repository::new(args.repo)?;
 
     let mut app = App::new(repo)?;
-    return Ok(ratatui::run(|terminal| app.run(terminal))?);
+    Ok(ratatui::run(|terminal| app.run(terminal))?)
 }

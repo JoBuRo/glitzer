@@ -1,3 +1,7 @@
+use crate::glitzer::author;
+
+use super::author::Author;
+
 use super::git_objects::*;
 use super::parser::*;
 use bytes::Bytes;
@@ -5,6 +9,7 @@ use color_eyre::eyre::eyre;
 use color_eyre::{Result, eyre::WrapErr};
 use flate2::read::ZlibDecoder;
 use sha1::{Digest, Sha1};
+use std::collections::HashMap;
 use std::fmt;
 use std::io::Read;
 
@@ -12,6 +17,26 @@ pub trait RepositoryAccess {
     fn get_object(&self, hash: &str) -> Result<GitObject>;
     fn get_commits(&self) -> Result<Vec<Commit>>;
     fn get_path(&self) -> &str;
+    fn get_authors(&self) -> Result<Vec<Author>> {
+        let mut author_map: HashMap<String, Author> = std::collections::HashMap::new();
+        let commits = self.get_commits()?;
+
+        for commit in commits {
+            let key = &commit.author.email;
+
+            if let Some(author) = author_map.get_mut(key) {
+                author.add_commit(commit.clone());
+            } else {
+                let mut author =
+                    Author::new(commit.author.name.clone(), commit.author.email.clone());
+                author.add_commit(commit.clone());
+                author_map.insert(key.clone(), author);
+            }
+        }
+
+        let mut authors: Vec<Author> = author_map.into_values().collect();
+        Ok(authors)
+    }
 }
 
 pub struct Repository {
