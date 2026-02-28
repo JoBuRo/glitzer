@@ -1,5 +1,3 @@
-use crate::glitzer::author;
-
 use super::author::Author;
 
 use super::git_objects::*;
@@ -12,11 +10,14 @@ use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::fmt;
 use std::io::Read;
+use std::path;
+use std::path::Path;
 
 pub trait RepositoryAccess {
     fn get_object(&self, hash: &str) -> Result<GitObject>;
     fn get_commits(&self) -> Result<Vec<Commit>>;
-    fn get_path(&self) -> &str;
+    fn get_commit(&self, hash: &str) -> Result<Commit>;
+    fn get_path(&self) -> &Path;
     fn get_authors(&self) -> Result<Vec<Author>> {
         let mut author_map: HashMap<String, Author> = std::collections::HashMap::new();
         let commits = self.get_commits()?;
@@ -34,7 +35,7 @@ pub trait RepositoryAccess {
             }
         }
 
-        let mut authors: Vec<Author> = author_map.into_values().collect();
+        let authors: Vec<Author> = author_map.into_values().collect();
         Ok(authors)
     }
 }
@@ -49,6 +50,13 @@ impl RepositoryAccess for Repository {
     fn get_object(&self, hash: &str) -> Result<GitObject> {
         let file_path = format!("{}/.git/objects/{}/{}", self.path, &hash[0..2], &hash[2..]);
         read_object(&file_path)
+    }
+
+    fn get_commit(&self, hash: &str) -> Result<Commit> {
+        if let GitObject::Commit(commit) = self.get_object(hash)? {
+            return Ok(commit);
+        }
+        Err(eyre!("Expected commit at {}", hash))
     }
 
     fn get_commits(&self) -> Result<Vec<Commit>> {
@@ -75,19 +83,24 @@ impl RepositoryAccess for Repository {
         Ok(commits)
     }
 
-    fn get_path(&self) -> &str {
-        &self.path
+    fn get_path(&self) -> &Path {
+        Path::new(&self.path)
     }
 }
 
 impl Repository {
     pub fn new(path: String) -> Result<Self> {
-        let head_path = format!("{}/.git/HEAD", path);
+        let absolute_path = path::absolute(&path)?
+            .into_os_string()
+            .into_string()
+            .unwrap_or(path.clone());
+
+        let head_path = format!("{}/.git/HEAD", absolute_path);
         let head_content = std::fs::read_to_string(&head_path)
             .wrap_err_with(|| format!("Failed to read HEAD file at {}", head_path))?;
 
         let ref_path = head_content[5..].trim();
-        let full_ref_path = format!("{}/.git/{}", path, ref_path);
+        let full_ref_path = format!("{}/.git/{}", absolute_path, ref_path);
         let ref_content = std::fs::read_to_string(&full_ref_path)
             .wrap_err_with(|| format!("Failed to read reference file at {}", full_ref_path))?;
         let head_hash = ref_content.trim().to_string();
@@ -98,7 +111,7 @@ impl Repository {
             .to_string();
 
         let repo = Repository {
-            path: path.to_string(),
+            path: absolute_path,
             head: head_hash,
             current_branch,
         };

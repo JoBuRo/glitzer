@@ -1,6 +1,6 @@
 use super::git_objects::*;
 use chrono::prelude::*;
-use color_eyre::eyre::{Result, WrapErr, eyre};
+use color_eyre::eyre::{Result, eyre};
 use nom::Err;
 use nom::IResult;
 use nom::Parser;
@@ -98,7 +98,7 @@ fn tree_entry(input: &[u8]) -> IResult<&[u8], TreeEntry> {
 pub fn parse_tree(input: &[u8], hash: &str) -> Result<Tree> {
     match many1(tree_entry).parse(input) {
         Ok((input, mut entries)) => {
-            if input.len() != 0 {
+            if !input.is_empty() {
                 return Err(eyre!(
                     "Did not consume all input, rest: {:?}",
                     std::str::from_utf8(input)
@@ -107,14 +107,12 @@ pub fn parse_tree(input: &[u8], hash: &str) -> Result<Tree> {
 
             entries.sort_by(|a, b| a.name.cmp(&b.name));
 
-            return Ok(Tree {
+            Ok(Tree {
                 hash: hash.to_string(),
                 entries,
-            });
+            })
         }
-        Err(err) => {
-            return Err(eyre!("Failed to parse tree object: {:?}", err));
-        }
+        Err(err) => Err(eyre!("Failed to parse tree object: {:?}", err)),
     }
 }
 
@@ -166,7 +164,7 @@ mod tests {
             std::str::from_utf8(commit_str).unwrap(),
         );
 
-        if !commit_res.is_ok() {
+        if commit_res.is_err() {
             println!("Error: {}", commit_res.err().unwrap());
             assert_eq!(true, false);
             return;
@@ -205,7 +203,7 @@ mod tests {
             std::str::from_utf8(commit_str).unwrap(),
         );
 
-        if !commit_res.is_ok() {
+        if commit_res.is_err() {
             println!("Error: {}", commit_res.err().unwrap());
             assert_eq!(true, false);
             return;
@@ -241,7 +239,7 @@ mod tests {
 
         let tree_res = parse_tree(tree_bytes, "c0ffee");
 
-        if !tree_res.is_ok() {
+        if tree_res.is_err() {
             println!("Error: {}", tree_res.err().unwrap());
             assert_eq!(true, false);
             return;

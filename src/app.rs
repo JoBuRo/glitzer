@@ -16,10 +16,8 @@ pub struct App {
 
 impl App {
     pub fn new(repo: impl RepositoryAccess) -> Result<Self> {
-        let commits = repo.get_commits()?;
-        let authors = repo.get_authors()?;
         Ok(App {
-            current_view: Box::new(MainView::new(commits, authors)),
+            current_view: Box::new(MainView::new(&repo)?),
         })
     }
 

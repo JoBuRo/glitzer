@@ -10,25 +10,26 @@ use super::diff::{Diff, diff};
 use super::git_objects::{Commit, EntryMode, GitObject, TreeEntry};
 
 #[derive(Debug, Clone)]
-struct FileInfo {
+pub struct FileInfo {
     name: String,
     hash: String,
-    mode: EntryMode,
+    _mode: EntryMode,
 }
 
-enum FileChangeType {
+#[derive(Clone)]
+pub enum FileChangeType {
     Added,
     Removed,
     Modified,
 }
 
-struct FileChange {
-    location: PathBuf,
-    change_type: FileChangeType,
-    diff: Option<Diff>,
+pub struct FileChange {
+    pub location: PathBuf,
+    pub _change_type: FileChangeType,
+    pub diff: Option<Diff>,
 }
 
-struct Directory {
+pub struct Directory {
     info: FileInfo,
     content: HashMap<String, FileTree>,
 }
@@ -43,7 +44,7 @@ impl Directory {
             } else {
                 changed.push(FileChange {
                     location: root.join(name),
-                    change_type: FileChangeType::Added,
+                    _change_type: FileChangeType::Added,
                     diff: None,
                 });
             }
@@ -53,7 +54,7 @@ impl Directory {
             if !self.content.contains_key(name) {
                 changed.push(FileChange {
                     location: root.join(name),
-                    change_type: FileChangeType::Removed,
+                    _change_type: FileChangeType::Removed,
                     diff: None,
                 });
             }
@@ -64,17 +65,17 @@ impl Directory {
 }
 
 #[derive(Debug, Clone)]
-struct SourceFile {
+pub struct SourceFile {
     info: FileInfo,
     content: String,
 }
 
-struct BlobFile {
+pub struct BlobFile {
     info: FileInfo,
-    content: Bytes,
+    _content: Bytes,
 }
 
-enum LeafFile {
+pub enum LeafFile {
     Source(SourceFile),
     Blob(BlobFile),
 }
@@ -87,7 +88,7 @@ impl LeafFile {
                 if file_diff.lines_added > 0 || file_diff.lines_removed > 0 {
                     return vec![FileChange {
                         location: root.join(&new_src.info.name),
-                        change_type: FileChangeType::Modified,
+                        _change_type: FileChangeType::Modified,
                         diff: Some(file_diff),
                     }];
                 }
@@ -97,7 +98,7 @@ impl LeafFile {
                 if new_blob.info.hash != old_blob.info.hash {
                     return vec![FileChange {
                         location: root.join(&new_blob.info.name),
-                        change_type: FileChangeType::Modified,
+                        _change_type: FileChangeType::Modified,
                         diff: None,
                     }];
                 }
@@ -108,7 +109,7 @@ impl LeafFile {
     }
 }
 
-enum FileTree {
+pub enum FileTree {
     Node(Directory),
     Leaf(LeafFile),
 }
@@ -121,13 +122,13 @@ impl FileTree {
 
         match (self, old) {
             (FileTree::Node(new_dir), FileTree::Node(old_dir)) => {
-                return new_dir.file_changes(old_dir, root);
+                new_dir.file_changes(old_dir, root)
             }
             (FileTree::Leaf(new_file), FileTree::Leaf(old_file)) => {
-                return new_file.file_changes(old_file, root);
+                new_file.file_changes(old_file, root)
             }
             _ => {
-                return vec![];
+                vec![]
             }
         }
     }
@@ -148,9 +149,9 @@ impl FileTree {
         if let GitObject::Tree(tree) = tree_object {
             let mut root = Directory {
                 info: FileInfo {
-                    name: repo.get_path().to_string(),
+                    name: repo.get_path().to_str().unwrap_or("?").to_string(),
                     hash: commit.tree.clone(),
-                    mode: EntryMode::Tree,
+                    _mode: EntryMode::Tree,
                 },
                 content: HashMap::new(),
             };
@@ -175,26 +176,22 @@ impl FileTree {
                 let parse_result = std::str::from_utf8(&blob.content);
 
                 match parse_result {
-                    Ok(content_str) => Ok(FileTree::Leaf(LeafFile::Source(
-                        (SourceFile {
-                            info: FileInfo {
-                                name: entry.name.clone(),
-                                hash: blob.hash,
-                                mode: entry.mode,
-                            },
-                            content: content_str.to_string(),
-                        }),
-                    ))),
-                    Err(_) => Ok(FileTree::Leaf(LeafFile::Blob(
-                        (BlobFile {
-                            info: FileInfo {
-                                name: entry.name.clone(),
-                                hash: blob.hash,
-                                mode: entry.mode,
-                            },
-                            content: blob.content.clone(),
-                        }),
-                    ))),
+                    Ok(content_str) => Ok(FileTree::Leaf(LeafFile::Source(SourceFile {
+                        info: FileInfo {
+                            name: entry.name.clone(),
+                            hash: blob.hash,
+                            _mode: entry.mode,
+                        },
+                        content: content_str.to_string(),
+                    }))),
+                    Err(_) => Ok(FileTree::Leaf(LeafFile::Blob(BlobFile {
+                        info: FileInfo {
+                            name: entry.name.clone(),
+                            hash: blob.hash,
+                            _mode: entry.mode,
+                        },
+                        _content: blob.content.clone(),
+                    }))),
                 }
             }
             GitObject::Tree(tree) => {
@@ -202,7 +199,7 @@ impl FileTree {
                     info: FileInfo {
                         name: entry.name.clone(),
                         hash: tree.hash,
-                        mode: entry.mode,
+                        _mode: entry.mode,
                     },
                     content: HashMap::new(),
                 };
@@ -254,8 +251,15 @@ mod tests {
                 .ok_or_else(|| eyre!("Object with hash {} not found", hash))
         }
 
-        fn get_path(&self) -> &str {
-            "mock_repo"
+        fn get_commit(&self, hash: &str) -> Result<Commit> {
+            if let GitObject::Commit(commit) = self.get_object(hash)? {
+                return Ok(commit);
+            }
+            Err(eyre!("Object with hash {} is not a commit", hash))
+        }
+
+        fn get_path(&self) -> &Path {
+            Path::new("mock_repo")
         }
     }
 
@@ -363,7 +367,7 @@ mod tests {
                     if let LeafFile::Blob(nested_blob) = nested_file {
                         assert_eq!(nested_blob.info.name, "blob.exe");
                         assert_eq!(nested_blob.info.hash, "5");
-                        assert_eq!(nested_blob.content, Bytes::from(&b"\xc3\x28"[..]));
+                        assert_eq!(nested_blob._content, Bytes::from(&b"\xc3\x28"[..]));
                     } else {
                         panic!("Expected 'blob.exe' to be a Blob file");
                     }

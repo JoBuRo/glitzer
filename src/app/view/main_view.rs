@@ -2,10 +2,8 @@ use super::super::widgets::authors::Authors;
 use super::super::widgets::history::History;
 use super::super::widgets::log::Log;
 use super::View;
-use crate::{
-    app::widgets::SelectableWidget,
-    glitzer::{author::Author, git_objects::Commit},
-};
+use crate::{app::widgets::SelectableWidget, glitzer::repo::RepositoryAccess};
+use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -30,13 +28,13 @@ pub struct MainView {
 }
 
 impl MainView {
-    pub fn new(commits: Vec<Commit>, authors: Vec<Author>) -> Self {
-        MainView {
-            log: Log::new(commits.clone()),
-            history: History::new(commits.clone()),
-            authors: Authors::new(authors),
+    pub fn new(repo: &impl RepositoryAccess) -> Result<Self> {
+        Ok(MainView {
+            log: Log::new(repo.get_commits()?),
+            history: History::new(repo.get_commits()?),
+            authors: Authors::new(repo)?,
             selected: None,
-        }
+        })
     }
 
     fn unselect_widgets(&mut self) {
