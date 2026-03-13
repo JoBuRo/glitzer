@@ -1,5 +1,6 @@
 use super::author::Author;
 
+use super::file_tree::{FileChange, FileTree};
 use super::git_objects::*;
 use super::parser::*;
 use bytes::Bytes;
@@ -15,9 +16,15 @@ use std::path::Path;
 
 pub trait RepositoryAccess {
     fn get_object(&self, hash: &str) -> Result<GitObject>;
+
     fn get_commits(&self) -> Result<Vec<Commit>>;
+
     fn get_commit(&self, hash: &str) -> Result<Commit>;
+
     fn get_path(&self) -> &Path;
+
+    fn get_file_changes(&self, commit: &Commit) -> Result<Vec<FileChange>>;
+
     fn get_authors(&self) -> Result<Vec<Author>> {
         let mut author_map: HashMap<String, Author> = std::collections::HashMap::new();
         let commits = self.get_commits()?;
@@ -85,6 +92,15 @@ impl RepositoryAccess for Repository {
 
     fn get_path(&self) -> &Path {
         Path::new(&self.path)
+    }
+
+    fn get_file_changes(&self, commit: &Commit) -> Result<Vec<FileChange>> {
+        let parent_tree: Option<FileTree> = match &commit.parent {
+            Some(parent_hash) => Some(FileTree::from_commit(&self.get_commit(parent_hash)?, self)?),
+            None => None,
+        };
+        let tree = FileTree::from_commit(commit, self)?;
+        Ok(tree.file_changes(parent_tree.as_ref(), self.get_path()))
     }
 }
 
@@ -212,7 +228,9 @@ pub fn read_object(file_path: &str) -> Result<GitObject> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::git_objects;
     use super::*;
+    use chrono::Utc; // Import to access git_objects::Author
 
     #[test]
     fn test_parse_object() {
@@ -251,5 +269,295 @@ mod tests {
         assert!(result.is_err());
         let report = result.err().unwrap();
         assert!(report.to_string().contains("invalid utf-8"));
+    }
+
+    // Shared MockRepo for testing RepositoryAccess implementations
+    struct MockRepo {
+        objects: HashMap<String, GitObject>,
+    }
+
+    impl RepositoryAccess for MockRepo {
+        fn get_commits(&self) -> Result<Vec<Commit>> {
+            // Return commits by traversing from the synthetic HEAD commit.
+            let mut commits = Vec::new();
+            let mut current_hash_opt = if self.objects.contains_key("HEAD_COMMIT") {
+                Some("HEAD_COMMIT".to_string())
+            } else {
+                None
+            };
+
+            while let Some(current_hash) = current_hash_opt {
+                if current_hash == "HEAD_HASH" {
+                    if let Some(GitObject::Commit(commit)) = self.objects.get("HEAD_COMMIT") {
+                        current_hash_opt = commit.parent.clone();
+                        commits.push(commit.clone());
+                    } else {
+                        break;
+                    }
+                } else if let Some(GitObject::Commit(commit)) = self.objects.get(&current_hash) {
+                    current_hash_opt = commit.parent.clone();
+                    commits.push(commit.clone());
+                } else {
+                    break;
+                }
+            }
+
+            Ok(commits)
+        }
+
+        fn get_object(&self, hash: &str) -> Result<GitObject> {
+            self.objects
+                .get(hash)
+                .cloned()
+                .ok_or_else(|| eyre!("Object with hash {} not found", hash))
+        }
+
+        fn get_commit(&self, hash: &str) -> Result<Commit> {
+            if let GitObject::Commit(commit) = self.get_object(hash)? {
+                return Ok(commit);
+            }
+            Err(eyre!("Object with hash {} is not a commit", hash))
+        }
+
+        fn get_path(&self) -> &Path {
+            Path::new("mock_repo")
+        }
+
+        fn get_file_changes(&self, commit: &Commit) -> Result<Vec<FileChange>> {
+            let parent_tree: Option<FileTree> = match &commit.parent {
+                Some(parent_hash) => Some(FileTree::from_commit(
+                    &self.get_commit(&parent_hash)?,
+                    self,
+                )?),
+                None => None,
+            };
+            let tree = FileTree::from_commit(&commit, self)?;
+            Ok(tree.file_changes(parent_tree.as_ref(), self.get_path()))
+        }
+    }
+
+    fn make_test_commit(
+        hash: &str,
+        parent: Option<&str>,
+        tree: &str,
+        name: &str,
+        email: &str,
+    ) -> Commit {
+        // Note: Author in git_objects is different from Author in author.rs
+        // We use the git_objects::Author type here
+        let author = git_objects::Author {
+            name: name.to_string(),
+            email: email.to_string(),
+        };
+
+        Commit {
+            hash: hash.to_string(),
+            parent: parent.map(|p| p.to_string()),
+            tree: tree.to_string(),
+            message: format!("commit {}", hash),
+            author: author.clone(),
+            authored_at: Utc::now(),
+            _committer: author,
+            committed_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn test_get_authors() {
+        // Create commits from different authors
+        let commit1 = make_test_commit("c1", None, "t1", "Alice", "alice@example.com");
+        let commit2 = make_test_commit("c2", Some("c1"), "t2", "Bob", "bob@example.com");
+        let commit3 = make_test_commit("c3", Some("c2"), "t3", "Alice", "alice@example.com");
+        let commit4 = make_test_commit("c4", Some("c3"), "t4", "Charlie", "charlie@example.com");
+        let commit5 = make_test_commit("c5", Some("c4"), "t5", "Bob", "bob@example.com");
+
+        let mut objects = HashMap::new();
+
+        // Store commits - need to link them properly
+        objects.insert(
+            "HEAD_COMMIT".to_string(),
+            GitObject::Commit(commit5.clone()),
+        );
+        objects.insert("c5".to_string(), GitObject::Commit(commit5));
+        objects.insert("c4".to_string(), GitObject::Commit(commit4));
+        objects.insert("c3".to_string(), GitObject::Commit(commit3));
+        objects.insert("c2".to_string(), GitObject::Commit(commit2));
+        objects.insert("c1".to_string(), GitObject::Commit(commit1));
+
+        // Add minimal tree objects so FileTree::from_commit doesn't fail
+        objects.insert(
+            "t1".to_string(),
+            GitObject::Tree(git_objects::Tree {
+                hash: "t1".to_string(),
+                entries: vec![],
+            }),
+        );
+        objects.insert(
+            "t2".to_string(),
+            GitObject::Tree(git_objects::Tree {
+                hash: "t2".to_string(),
+                entries: vec![],
+            }),
+        );
+        objects.insert(
+            "t3".to_string(),
+            GitObject::Tree(git_objects::Tree {
+                hash: "t3".to_string(),
+                entries: vec![],
+            }),
+        );
+        objects.insert(
+            "t4".to_string(),
+            GitObject::Tree(git_objects::Tree {
+                hash: "t4".to_string(),
+                entries: vec![],
+            }),
+        );
+        objects.insert(
+            "t5".to_string(),
+            GitObject::Tree(git_objects::Tree {
+                hash: "t5".to_string(),
+                entries: vec![],
+            }),
+        );
+
+        let repo = MockRepo { objects };
+
+        let authors = repo.get_authors().unwrap();
+
+        // Should have 3 unique authors
+        assert_eq!(authors.len(), 3);
+
+        // Verify each author's email and commit count
+        let mut author_map: HashMap<String, usize> = HashMap::new();
+        for author in &authors {
+            author_map.insert(author.email.clone(), author.commits.len());
+        }
+
+        assert_eq!(author_map.get("alice@example.com"), Some(&2));
+        assert_eq!(author_map.get("bob@example.com"), Some(&2));
+        assert_eq!(author_map.get("charlie@example.com"), Some(&1));
+    }
+
+    #[test]
+    fn test_get_file_changes() {
+        // Create parent and child commits with different trees
+        let parent_commit = make_test_commit("p", None, "t_parent", "Test", "test@example.com");
+        let child_commit = make_test_commit("c", Some("p"), "t_child", "Test", "test@example.com");
+
+        let mut objects = HashMap::new();
+
+        objects.insert("p".to_string(), GitObject::Commit(parent_commit.clone()));
+        objects.insert("c".to_string(), GitObject::Commit(child_commit.clone()));
+
+        // Parent tree has one file: foo.txt with content "old\n"
+        objects.insert(
+            "t_parent".to_string(),
+            GitObject::Tree(git_objects::Tree {
+                hash: "t_parent".to_string(),
+                entries: vec![git_objects::TreeEntry {
+                    name: "foo.txt".to_string(),
+                    hash: "b_old".to_string(),
+                    mode: git_objects::EntryMode::Text,
+                }],
+            }),
+        );
+
+        // Child tree has two files:
+        // - foo.txt (modified): "old\nmodified\n"
+        // - bar.txt (added): "new content\n"
+        objects.insert(
+            "t_child".to_string(),
+            GitObject::Tree(git_objects::Tree {
+                hash: "t_child".to_string(),
+                entries: vec![
+                    git_objects::TreeEntry {
+                        name: "bar.txt".to_string(),
+                        hash: "b_new_file".to_string(),
+                        mode: git_objects::EntryMode::Text,
+                    },
+                    git_objects::TreeEntry {
+                        name: "foo.txt".to_string(),
+                        hash: "b_modified".to_string(),
+                        mode: git_objects::EntryMode::Text,
+                    },
+                ],
+            }),
+        );
+
+        // Original foo.txt
+        objects.insert(
+            "b_old".to_string(),
+            GitObject::Blob(Blob {
+                hash: "b_old".to_string(),
+                content: Bytes::from("old\n"),
+            }),
+        );
+
+        // Modified foo.txt - added one line
+        objects.insert(
+            "b_modified".to_string(),
+            GitObject::Blob(Blob {
+                hash: "b_modified".to_string(),
+                content: Bytes::from("old\nmodified\n"),
+            }),
+        );
+
+        // New bar.txt - added file
+        objects.insert(
+            "b_new_file".to_string(),
+            GitObject::Blob(Blob {
+                hash: "b_new_file".to_string(),
+                content: Bytes::from("new content\n"),
+            }),
+        );
+
+        let repo = MockRepo { objects };
+
+        // Get file changes for the child commit
+        let changes = repo.get_file_changes(&child_commit).unwrap();
+
+        // Should have 2 changes: foo.txt (modified) and bar.txt (added)
+        assert_eq!(changes.len(), 2);
+
+        // Collect file names from changes
+        let mut change_names: Vec<String> = changes
+            .iter()
+            .map(|c| {
+                c.location
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        change_names.sort();
+
+        assert!(change_names.contains(&"bar.txt".to_string()));
+        assert!(change_names.contains(&"foo.txt".to_string()));
+
+        // Verify the diff details for each file
+        for change in &changes {
+            let file_name = change
+                .location
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
+
+            match file_name.as_str() {
+                "foo.txt" => {
+                    // Modified file: 1 line added, 0 lines removed
+                    assert_eq!(change.diff.lines_added, 1);
+                    assert_eq!(change.diff.lines_removed, 0);
+                }
+                "bar.txt" => {
+                    // Added file: 1 line added, 0 lines removed
+                    assert_eq!(change.diff.lines_added, 1);
+                    assert_eq!(change.diff.lines_removed, 0);
+                }
+                _ => panic!("Unexpected file: {}", file_name),
+            }
+        }
     }
 }

@@ -26,7 +26,7 @@ pub enum FileChangeType {
 pub struct FileChange {
     pub location: PathBuf,
     pub _change_type: FileChangeType,
-    pub diff: Option<Diff>,
+    pub diff: Diff,
 }
 
 pub struct Directory {
@@ -35,27 +35,37 @@ pub struct Directory {
 }
 
 impl Directory {
+    fn size(&self) -> usize {
+        self.content.values().map(|f| f.size()).sum()
+    }
+
     fn file_changes(&self, old: &Directory, root: &Path) -> Vec<FileChange> {
         let mut changed = Vec::new();
 
         for (name, new_tree) in &self.content {
             if let Some(other_tree) = old.content.get(name) {
-                changed.extend(new_tree.file_changes(other_tree, root));
+                changed.extend(new_tree.file_changes(Some(other_tree), root));
             } else {
                 changed.push(FileChange {
                     location: root.join(name),
                     _change_type: FileChangeType::Added,
-                    diff: None,
+                    diff: Diff {
+                        lines_added: new_tree.size() as u64,
+                        lines_removed: 0,
+                    },
                 });
             }
         }
 
-        for name in old.content.keys() {
+        for (name, old_tree) in &old.content {
             if !self.content.contains_key(name) {
                 changed.push(FileChange {
                     location: root.join(name),
                     _change_type: FileChangeType::Removed,
-                    diff: None,
+                    diff: Diff {
+                        lines_added: 0,
+                        lines_removed: old_tree.size() as u64,
+                    },
                 });
             }
         }
@@ -68,6 +78,12 @@ impl Directory {
 pub struct SourceFile {
     info: FileInfo,
     content: String,
+}
+
+impl SourceFile {
+    fn size(&self) -> usize {
+        self.content.lines().count()
+    }
 }
 
 pub struct BlobFile {
@@ -89,7 +105,7 @@ impl LeafFile {
                     return vec![FileChange {
                         location: root.join(&new_src.info.name),
                         _change_type: FileChangeType::Modified,
-                        diff: Some(file_diff),
+                        diff: file_diff,
                     }];
                 }
                 vec![]
@@ -99,7 +115,11 @@ impl LeafFile {
                     return vec![FileChange {
                         location: root.join(&new_blob.info.name),
                         _change_type: FileChangeType::Modified,
-                        diff: None,
+                        // Ignore changes in blob files
+                        diff: Diff {
+                            lines_added: 0,
+                            lines_removed: 0,
+                        },
                     }];
                 }
                 vec![]
@@ -115,12 +135,25 @@ pub enum FileTree {
 }
 
 impl FileTree {
-    pub fn file_changes(&self, old: &FileTree, root: &Path) -> Vec<FileChange> {
-        if self.get_info().hash == old.get_info().hash {
+    pub fn size(&self) -> usize {
+        match self {
+            FileTree::Node(directory) => directory.size(),
+            FileTree::Leaf(LeafFile::Source(file)) => file.size(),
+            _ => 0,
+        }
+    }
+
+    pub fn file_changes(&self, old: Option<&FileTree>, root: &Path) -> Vec<FileChange> {
+        if old.is_none() {
             return vec![];
         }
 
-        match (self, old) {
+        let old_tree = old.unwrap();
+        if self.get_info().hash == old_tree.get_info().hash {
+            return vec![];
+        }
+
+        match (self, old_tree) {
             (FileTree::Node(new_dir), FileTree::Node(old_dir)) => {
                 new_dir.file_changes(old_dir, root)
             }
@@ -172,28 +205,24 @@ impl FileTree {
 
     fn from_entry(entry: &TreeEntry, repo: &impl RepositoryAccess) -> Result<Self> {
         match repo.get_object(&entry.hash)? {
-            GitObject::Blob(blob) => {
-                let parse_result = std::str::from_utf8(&blob.content);
-
-                match parse_result {
-                    Ok(content_str) => Ok(FileTree::Leaf(LeafFile::Source(SourceFile {
-                        info: FileInfo {
-                            name: entry.name.clone(),
-                            hash: blob.hash,
-                            _mode: entry.mode,
-                        },
-                        content: content_str.to_string(),
-                    }))),
-                    Err(_) => Ok(FileTree::Leaf(LeafFile::Blob(BlobFile {
-                        info: FileInfo {
-                            name: entry.name.clone(),
-                            hash: blob.hash,
-                            _mode: entry.mode,
-                        },
-                        _content: blob.content.clone(),
-                    }))),
-                }
-            }
+            GitObject::Blob(blob) => match std::str::from_utf8(&blob.content) {
+                Ok(content_str) => Ok(FileTree::Leaf(LeafFile::Source(SourceFile {
+                    info: FileInfo {
+                        name: entry.name.clone(),
+                        hash: blob.hash,
+                        _mode: entry.mode,
+                    },
+                    content: content_str.to_string(),
+                }))),
+                Err(_) => Ok(FileTree::Leaf(LeafFile::Blob(BlobFile {
+                    info: FileInfo {
+                        name: entry.name.clone(),
+                        hash: blob.hash,
+                        _mode: entry.mode,
+                    },
+                    _content: blob.content.clone(),
+                }))),
+            },
             GitObject::Tree(tree) => {
                 let mut dir = Directory {
                     info: FileInfo {
@@ -227,6 +256,10 @@ mod tests {
     }
 
     impl RepositoryAccess for MockRepo {
+        fn get_file_changes(&self, _commit: &Commit) -> Result<Vec<FileChange>> {
+            Ok(vec![])
+        }
+
         fn get_commits(&self) -> Result<Vec<Commit>> {
             let author = Author {
                 name: "Test Author".to_string(),

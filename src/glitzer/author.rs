@@ -42,7 +42,7 @@ impl Author {
             if let Some(parent) = &commit.parent {
                 let parent_commit = repo.get_commit(parent)?;
                 let parent_tree = FileTree::from_commit(&parent_commit, repo)?;
-                let changes = tree.file_changes(&parent_tree, repo.get_path());
+                let changes = tree.file_changes(Some(&parent_tree), repo.get_path());
                 aggregate_changes(&mut change_map, changes);
             }
         }
@@ -55,14 +55,12 @@ impl Author {
 
 fn aggregate_changes(change_map: &mut HashMap<PathBuf, u64>, changes: Vec<FileChange>) {
     for change in changes {
-        let lines_touched_new = match &change.diff {
-            Some(old_diff) => old_diff.lines_touched(),
-            None => 0,
-        };
-
         let lines_touched_old = change_map.get(&change.location).unwrap_or(&0);
 
-        change_map.insert(change.location, lines_touched_new + *lines_touched_old);
+        change_map.insert(
+            change.location,
+            change.diff.lines_touched() + *lines_touched_old,
+        );
     }
 }
 
@@ -82,8 +80,12 @@ mod tests {
     }
 
     impl RepositoryAccess for MockRepo {
+        // Not used by these tests
         fn get_commits(&self) -> Result<Vec<Commit>> {
-            // Not used by these tests
+            Ok(vec![])
+        }
+
+        fn get_file_changes(&self, _: &Commit) -> Result<Vec<FileChange>> {
             Ok(vec![])
         }
 
