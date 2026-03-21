@@ -63,19 +63,37 @@ impl MainView {
         }
     }
 
-    fn active_tab_text(&self) -> &'static str {
+    fn active_tab_text(&self) -> String {
+        let selected_name = self
+            .hotspots
+            .selected_hotspot()
+            .map(|hotspot| hotspot.location().to_string())
+            .unwrap_or("[none]".to_string());
+
         match self.active_tab {
             EvidenceTab::Commits => {
-                "Placeholder: recent commits and authors for the selected hotspot will appear here."
+                format!(
+                    "Placeholder: recent commits and authors touching {} will appear here.",
+                    selected_name
+                )
             }
             EvidenceTab::CoChange => {
-                "Placeholder: top coupled files and co-change strength will appear here."
+                format!(
+                    "Placeholder: top files that co-change with {} will appear here.",
+                    selected_name
+                )
             }
             EvidenceTab::Ownership => {
-                "Placeholder: author distribution and ownership concentration will appear here."
+                format!(
+                    "Placeholder: author distribution and ownership concentration for {} will appear here.",
+                    selected_name
+                )
             }
             EvidenceTab::Notes => {
-                "Placeholder: narrative risk explanation and refactoring notes will appear here."
+                format!(
+                    "Placeholder: narrative risk explanation and refactoring notes for {} will appear here.",
+                    selected_name
+                )
             }
         }
     }
@@ -118,21 +136,40 @@ impl View for MainView {
             .title(detail_title.centered())
             .border_set(border::PLAIN)
             .padding(ratatui::widgets::Padding::horizontal(1));
-        let detail_text = Text::from(vec![
-            Line::from(format!(
-                "Name: [placeholder] hotspot #{}",
-                self.selected_hotspot_index + 1
-            )),
-            Line::from("Score: [placeholder]"),
-            Line::from(""),
-            Line::from("Why it ranks high:"),
-            Line::from("- [placeholder] high churn"),
-            Line::from("- [placeholder] many authors"),
-            Line::from("- [placeholder] strong co-change"),
-            Line::from("- [placeholder] recent activity spike"),
-            Line::from(""),
-            Line::from("Churn trend / sparkline: [placeholder]"),
-        ]);
+        let detail_text = if let Some(hotspot) = self.hotspots.selected_hotspot() {
+            Text::from(vec![
+                Line::from(format!("Name: {}", hotspot.location())),
+                Line::from(format!("Score: {}", hotspot.score())),
+                Line::from(""),
+                Line::from("Why it ranks high:"),
+                Line::from(format!(
+                    "- high churn: {} lines changed over {} touches",
+                    hotspot.lines_touched(),
+                    hotspot.touches()
+                )),
+                Line::from(format!(
+                    "- many authors: {} contributors touched this file",
+                    hotspot.author_count()
+                )),
+                Line::from(format!(
+                    "- sustained activity: recency signal {}",
+                    hotspot.recent_points()
+                )),
+                Line::from(format!(
+                    "- recent change: last touched {} days ago",
+                    hotspot.most_recent_days()
+                )),
+                Line::from(""),
+                Line::from("Churn trend / sparkline: coming in next step"),
+            ])
+        } else {
+            Text::from(vec![
+                Line::from("Name: [none]"),
+                Line::from("Score: 0"),
+                Line::from(""),
+                Line::from("No hotspots available for this repository."),
+            ])
+        };
         frame.render_widget(
             Paragraph::new(detail_text).block(detail_block),
             top_layout[1],
@@ -166,10 +203,17 @@ impl View for MainView {
                 std::process::exit(0);
             }
             KeyCode::Char('j') => {
-                self.selected_hotspot_index = self.selected_hotspot_index.saturating_add(1)
+                if self.hotspots.len() > 0 {
+                    self.selected_hotspot_index = (self.selected_hotspot_index + 1)
+                        .min(self.hotspots.len().saturating_sub(1));
+                    self.hotspots
+                        .set_selected_index(self.selected_hotspot_index);
+                }
             }
             KeyCode::Char('k') => {
-                self.selected_hotspot_index = self.selected_hotspot_index.saturating_sub(1)
+                self.selected_hotspot_index = self.selected_hotspot_index.saturating_sub(1);
+                self.hotspots
+                    .set_selected_index(self.selected_hotspot_index);
             }
             KeyCode::Char('h') => self.switch_tab_left(),
             KeyCode::Char('l') => self.switch_tab_right(),
