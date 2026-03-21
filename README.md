@@ -1,33 +1,29 @@
+# Glitzer
 
-# ✨ Glitzer
+> Find where refactoring attention should go, and show the evidence.
 
-> *"See your Git repositories shine — one object at a time."*
-
-**Glitzer** is a Rust-based command-line tool for exploring Git repositories.
-Its goal is to provide fast, insightful Git statistics and repository analysis — though it’s still early in development.
+Glitzer is a Rust TUI for identifying refactoring hotspots in a Git repository.
+It ranks files by change signals (churn, touches, ownership spread, and recency) and explains the ranking with tabbed evidence.
 
 [![Build](https://github.com/JoBuRo/glitzer/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/JoBuRo/glitzer/actions/workflows/rust.yml)
 
-> ⚠️ **Note:** Most functionality is not yet implemented.
-> Currently, Glitzer supports:
->
-> * Listing and inspecting Git objects
-> * Displaying basic commit history
+---
+
+## What It Does
+
+- Ranks likely refactoring hotspots from Git history
+- Shows selected-hotspot details and why it ranks highly
+- Provides evidence tabs:
+  - `Commits`: recent commits and authors touching the file
+  - `Co-change`: files frequently changed together
+  - `Ownership`: contributor distribution for the file
+  - `Notes`: risk and prioritization guidance
 
 ---
 
-## 🧰 Features (planned & in progress)
+## Installation
 
-* ✅ **Object Retrieval** — Read and display raw Git objects
-* ✅ **Commit History** — Show commits in a human-readable format
-* 🚧 **Statistics** — Analyze commits, branches, and contributors
-* 🚧 **Visualization** — View activity timelines and branch overviews
-
----
-
-## 🛠️ Installation
-
-You’ll need [Rust and Cargo](https://www.rust-lang.org/tools/install) installed.
+You need [Rust and Cargo](https://www.rust-lang.org/tools/install).
 
 ```bash
 git clone https://github.com/JoBuRo/glitzer.git
@@ -35,44 +31,42 @@ cd glitzer
 cargo build --release
 ```
 
-Run the built binary:
+---
+
+## Usage
+
+Run Glitzer for the current repository:
 
 ```bash
-./target/release/glitzer <command> [options]
+./target/release/glitzer
 ```
 
----
-
-## 💡 Usage
-
-### Commands
-
-| Command       | Description                                  |
-| ------------- | -------------------------------------------- |
-| `object <id>` | Show information about a specific Git object |
-| `history`     | Display the repository’s commit history      |
-
-### Examples
+Run Glitzer for a specific repository path:
 
 ```bash
-# Show commit history
-glitzer history
-
-# Inspect a Git object
-glitzer object <object-id>
+./target/release/glitzer --repo /path/to/repo
 ```
 
+### Keyboard Controls
+
+- `j` / `k`: move selected hotspot
+- `h` / `l`: switch evidence tabs
+- `q`: quit
+
 ---
 
-## 🤝 Contributing
+## Current Scope
 
-Glitzer is in its early stages — contributions, ideas, and feedback are welcome!
-Feel free to open an issue or submit a pull request.
+Glitzer is currently Git-history-driven. It does not yet include static complexity analysis or configurable time windows in the UI.
 
 ---
 
-## 🪪 License
+## Contributing
 
-This project is licensed under the **Apache 2.0 License**.
+Issues and pull requests are welcome.
 
+---
 
+## License
+
+Apache-2.0
