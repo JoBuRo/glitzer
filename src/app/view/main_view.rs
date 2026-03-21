@@ -1,3 +1,5 @@
+use super::super::widgets::evidence::{EvidenceTab, EvidenceWidget};
+use super::super::widgets::hotspot_detail::HotspotDetailWidget;
 use super::super::widgets::hotspots::Hotspots;
 use super::View;
 use crate::glitzer::repo::RepositoryAccess;
@@ -7,95 +9,57 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     prelude::*,
     symbols::border,
-    widgets::{Block, Paragraph, Tabs},
+    widgets::Block,
 };
-
-#[derive(Debug)]
-enum EvidenceTab {
-    Commits,
-    CoChange,
-    Ownership,
-    Notes,
-}
 
 #[derive(Debug)]
 pub struct MainView {
     hotspots: Hotspots,
     selected_hotspot_index: usize,
     active_tab: EvidenceTab,
+    hotspot_detail: HotspotDetailWidget,
+    evidence: EvidenceWidget,
 }
 
 impl MainView {
     pub fn new(repo: &impl RepositoryAccess) -> Result<Self> {
         let hotspots = Hotspots::new(repo)?;
+        let hotspot_detail = HotspotDetailWidget::from_hotspot(hotspots.selected_hotspot());
+        let selected_name = hotspots
+            .selected_hotspot()
+            .map(|hotspot| hotspot.location().to_string())
+            .unwrap_or("[none]".to_string());
+        let evidence = EvidenceWidget::new(EvidenceTab::Commits, selected_name);
 
         Ok(MainView {
             hotspots,
             selected_hotspot_index: 0,
             active_tab: EvidenceTab::Commits,
+            hotspot_detail,
+            evidence,
         })
     }
 
     fn switch_tab_left(&mut self) {
-        self.active_tab = match self.active_tab {
-            EvidenceTab::Commits => EvidenceTab::Notes,
-            EvidenceTab::CoChange => EvidenceTab::Commits,
-            EvidenceTab::Ownership => EvidenceTab::CoChange,
-            EvidenceTab::Notes => EvidenceTab::Ownership,
-        }
+        self.active_tab = self.active_tab.switch_left();
+        self.evidence.set_active_tab(self.active_tab);
     }
 
     fn switch_tab_right(&mut self) {
-        self.active_tab = match self.active_tab {
-            EvidenceTab::Commits => EvidenceTab::CoChange,
-            EvidenceTab::CoChange => EvidenceTab::Ownership,
-            EvidenceTab::Ownership => EvidenceTab::Notes,
-            EvidenceTab::Notes => EvidenceTab::Commits,
-        }
+        self.active_tab = self.active_tab.switch_right();
+        self.evidence.set_active_tab(self.active_tab);
     }
 
-    fn active_tab_index(&self) -> usize {
-        match self.active_tab {
-            EvidenceTab::Commits => 0,
-            EvidenceTab::CoChange => 1,
-            EvidenceTab::Ownership => 2,
-            EvidenceTab::Notes => 3,
-        }
-    }
+    fn refresh_selection_widgets(&mut self) {
+        self.hotspot_detail = HotspotDetailWidget::from_hotspot(self.hotspots.selected_hotspot());
 
-    fn active_tab_text(&self) -> String {
         let selected_name = self
             .hotspots
             .selected_hotspot()
             .map(|hotspot| hotspot.location().to_string())
             .unwrap_or("[none]".to_string());
 
-        match self.active_tab {
-            EvidenceTab::Commits => {
-                format!(
-                    "Placeholder: recent commits and authors touching {} will appear here.",
-                    selected_name
-                )
-            }
-            EvidenceTab::CoChange => {
-                format!(
-                    "Placeholder: top files that co-change with {} will appear here.",
-                    selected_name
-                )
-            }
-            EvidenceTab::Ownership => {
-                format!(
-                    "Placeholder: author distribution and ownership concentration for {} will appear here.",
-                    selected_name
-                )
-            }
-            EvidenceTab::Notes => {
-                format!(
-                    "Placeholder: narrative risk explanation and refactoring notes for {} will appear here.",
-                    selected_name
-                )
-            }
-        }
+        self.evidence.set_selected_hotspot_name(selected_name);
     }
 }
 
@@ -130,71 +94,8 @@ impl View for MainView {
             .split(outer_layout[0]);
 
         frame.render_widget(&self.hotspots, top_layout[0]);
-
-        let detail_title = Line::from("  Selected Hotspot  ".bold());
-        let detail_block = Block::bordered()
-            .title(detail_title.centered())
-            .border_set(border::PLAIN)
-            .padding(ratatui::widgets::Padding::horizontal(1));
-        let detail_text = if let Some(hotspot) = self.hotspots.selected_hotspot() {
-            Text::from(vec![
-                Line::from(format!("Name: {}", hotspot.location())),
-                Line::from(format!("Score: {}", hotspot.score())),
-                Line::from(""),
-                Line::from("Why it ranks high:"),
-                Line::from(format!(
-                    "- high churn: {} lines changed over {} touches",
-                    hotspot.lines_touched(),
-                    hotspot.touches()
-                )),
-                Line::from(format!(
-                    "- many authors: {} contributors touched this file",
-                    hotspot.author_count()
-                )),
-                Line::from(format!(
-                    "- sustained activity: recency signal {}",
-                    hotspot.recent_points()
-                )),
-                Line::from(format!(
-                    "- recent change: last touched {} days ago",
-                    hotspot.most_recent_days()
-                )),
-                Line::from(""),
-                Line::from("Churn trend / sparkline: coming in next step"),
-            ])
-        } else {
-            Text::from(vec![
-                Line::from("Name: [none]"),
-                Line::from("Score: 0"),
-                Line::from(""),
-                Line::from("No hotspots available for this repository."),
-            ])
-        };
-        frame.render_widget(
-            Paragraph::new(detail_text).block(detail_block),
-            top_layout[1],
-        );
-
-        let evidence_block = Block::bordered()
-            .title(Line::from("  Evidence / Explanation  ".bold()).centered())
-            .border_set(border::PLAIN)
-            .padding(ratatui::widgets::Padding::horizontal(1));
-
-        let evidence_inner = evidence_block.inner(outer_layout[1]);
-        frame.render_widget(evidence_block, outer_layout[1]);
-
-        let evidence_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(1)].as_ref())
-            .split(evidence_inner);
-
-        let tabs = Tabs::new(vec!["Commits", "Co-change", "Ownership", "Notes"])
-            .select(self.active_tab_index())
-            .highlight_style(Style::default().blue().bold())
-            .divider("|");
-        frame.render_widget(tabs, evidence_layout[0]);
-
-        frame.render_widget(Paragraph::new(self.active_tab_text()), evidence_layout[1]);
+        frame.render_widget(&self.hotspot_detail, top_layout[1]);
+        frame.render_widget(&self.evidence, outer_layout[1]);
     }
 
     fn handle_input(&mut self, input: KeyEvent) {
@@ -208,12 +109,14 @@ impl View for MainView {
                         .min(self.hotspots.len().saturating_sub(1));
                     self.hotspots
                         .set_selected_index(self.selected_hotspot_index);
+                    self.refresh_selection_widgets();
                 }
             }
             KeyCode::Char('k') => {
                 self.selected_hotspot_index = self.selected_hotspot_index.saturating_sub(1);
                 self.hotspots
                     .set_selected_index(self.selected_hotspot_index);
+                self.refresh_selection_widgets();
             }
             KeyCode::Char('h') => self.switch_tab_left(),
             KeyCode::Char('l') => self.switch_tab_right(),
