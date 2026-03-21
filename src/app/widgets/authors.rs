@@ -2,10 +2,7 @@ use color_eyre::eyre::Result;
 use std::fs::canonicalize;
 use std::path::PathBuf;
 
-use crate::{
-    app::widgets::SelectableWidget,
-    glitzer::{author::Author, repo::RepositoryAccess},
-};
+use crate::glitzer::{author::Author, repo::RepositoryAccess};
 use ratatui::{
     prelude::*,
     symbols::border,
@@ -22,7 +19,6 @@ struct AuthorAndFiles {
 #[derive(Debug)]
 pub struct Authors {
     authors: Vec<AuthorAndFiles>,
-    is_selected: bool,
 }
 
 impl Authors {
@@ -38,14 +34,21 @@ impl Authors {
         }
         Ok(Authors {
             authors: authors_and_files,
-            is_selected: false,
         })
+    }
+
+    fn block(&self) -> Block {
+        let title = Line::from("  👥 Authors 👥 ".bold());
+        Block::bordered()
+            .title(title.centered())
+            .border_set(border::PLAIN)
+            .padding(Padding::horizontal(5))
     }
 }
 
 impl Widget for &Authors {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let block = self.get_block();
+        let block = self.block();
 
         let items: Vec<ListItem> = self.authors.iter().map(ListItem::from).collect();
 
@@ -76,25 +79,5 @@ impl From<&AuthorAndFiles> for ListItem<'_> {
             );
         }
         ListItem::new(author_text)
-    }
-}
-
-impl SelectableWidget for Authors {
-    fn select(&mut self, selected: bool) {
-        self.is_selected = selected;
-    }
-
-    fn get_block(&self) -> Block {
-        let title = Line::from("  👥 Authors 👥 ".bold());
-        let mut block = Block::bordered()
-            .title(title.centered())
-            .border_set(border::PLAIN)
-            .padding(Padding::horizontal(5));
-
-        if self.is_selected {
-            block = block.green();
-        }
-
-        block
     }
 }

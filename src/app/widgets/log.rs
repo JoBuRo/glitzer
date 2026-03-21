@@ -5,27 +5,17 @@ use ratatui::{
     widgets::{Block, List, ListItem, Padding, Widget},
 };
 
-use crate::{app::widgets::SelectableWidget, glitzer::git_objects::Commit};
+use crate::glitzer::git_objects::Commit;
 
 #[derive(Debug)]
 pub struct Log {
     commits: Vec<Commit>,
     index: usize,
-    is_selected: bool,
 }
 
 impl Widget for &Log {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = Line::from("  🪵 Commit Log 🪵 ".bold());
-
-        let mut block = Block::bordered()
-            .title(title.centered())
-            .border_set(border::PLAIN)
-            .padding(Padding::horizontal(2));
-
-        if self.is_selected {
-            block = block.green();
-        }
+        let block = self.block();
 
         let items: Vec<ListItem> = self
             .commits
@@ -41,31 +31,15 @@ impl Widget for &Log {
 
 impl Log {
     pub fn new(commits: Vec<Commit>) -> Self {
-        Log {
-            commits,
-            index: 0,
-            is_selected: false,
-        }
-    }
-}
-
-impl SelectableWidget for Log {
-    fn select(&mut self, selected: bool) {
-        self.is_selected = selected;
+        Log { commits, index: 0 }
     }
 
-    fn get_block(&self) -> Block {
+    fn block(&self) -> Block {
         let title = Line::from("  🪵 Commit Log 🪵 ".bold());
-        let mut block = Block::bordered()
+        Block::bordered()
             .title(title.centered())
             .border_set(border::PLAIN)
-            .padding(Padding::horizontal(2));
-
-        if self.is_selected {
-            block = block.green();
-        }
-
-        block
+            .padding(Padding::horizontal(2))
     }
 }
 

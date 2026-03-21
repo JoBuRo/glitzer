@@ -9,7 +9,7 @@ use ratatui::{
     widgets::{Block, List, ListItem, Padding, Widget},
 };
 
-use crate::{app::widgets::SelectableWidget, glitzer::repo::RepositoryAccess};
+use crate::glitzer::repo::RepositoryAccess;
 
 #[derive(Debug)]
 struct Hotspot {
@@ -33,7 +33,6 @@ impl Hotspot {
 #[derive(Debug)]
 pub struct Hotspots {
     items: Vec<Hotspot>,
-    is_selected: bool,
 }
 
 impl Hotspots {
@@ -81,40 +80,25 @@ impl Hotspots {
         let mut items: Vec<Hotspot> = by_path.into_values().collect();
         items.sort_by_key(|hotspot| std::cmp::Reverse(hotspot.score()));
 
-        Ok(Hotspots {
-            items,
-            is_selected: false,
-        })
+        Ok(Hotspots { items })
+    }
+
+    fn block(&self) -> Block {
+        let title = Line::from("  🔧 Refactoring Attention 🔧 ".bold());
+        Block::bordered()
+            .title(title.centered())
+            .border_set(border::PLAIN)
+            .padding(Padding::horizontal(2))
     }
 }
 
 impl Widget for &Hotspots {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let block = self.get_block();
+        let block = self.block();
 
         let items: Vec<ListItem> = self.items.iter().take(6).map(ListItem::from).collect();
 
         Widget::render(List::new(items).block(block), area, buf);
-    }
-}
-
-impl SelectableWidget for Hotspots {
-    fn select(&mut self, selected: bool) {
-        self.is_selected = selected;
-    }
-
-    fn get_block(&self) -> Block {
-        let title = Line::from("  🔧 Refactoring Attention 🔧 ".bold());
-        let mut block = Block::bordered()
-            .title(title.centered())
-            .border_set(border::PLAIN)
-            .padding(Padding::horizontal(2));
-
-        if self.is_selected {
-            block = block.green();
-        }
-
-        block
     }
 }
 

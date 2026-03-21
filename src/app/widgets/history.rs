@@ -5,27 +5,29 @@ use ratatui::{
     widgets::{Bar, BarChart, BarGroup, Block, Widget},
 };
 
-use super::SelectableWidget;
 use crate::glitzer::git_objects::Commit;
 
 #[derive(Debug)]
 pub struct History {
     commits: Vec<Commit>,
-    is_selected: bool,
 }
 
 impl History {
     pub fn new(commits: Vec<Commit>) -> Self {
-        History {
-            commits,
-            is_selected: false,
-        }
+        History { commits }
+    }
+
+    fn block(&self) -> Block {
+        let title = Line::from("  📜 Commit History 📜 ".bold());
+        Block::bordered()
+            .title(title.centered())
+            .border_set(border::PLAIN)
     }
 }
 
 impl Widget for &History {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let block = self.get_block();
+        let block = self.block();
 
         let buckets = buckets_for_days(&self.commits);
 
@@ -69,25 +71,6 @@ fn buckets_for_days(commits: &[Commit]) -> Vec<(&str, u64)> {
     }
 
     buckets
-}
-
-impl SelectableWidget for History {
-    fn select(&mut self, selected: bool) {
-        self.is_selected = selected;
-    }
-
-    fn get_block(&self) -> Block {
-        let title = Line::from("  📜 Commit History 📜 ".bold());
-        let mut block = Block::bordered()
-            .title(title.centered())
-            .border_set(border::PLAIN);
-
-        if self.is_selected {
-            block = block.green();
-        }
-
-        block
-    }
 }
 
 fn bucket_to_bar(label: &str, count: u64) -> Bar {
