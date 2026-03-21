@@ -93,3 +93,83 @@ impl Widget for &HotspotDetailWidget {
         Widget::render(Paragraph::new(text).block(self.block()), area, buf);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::widgets::test_support::hotspot_payment;
+
+    fn render_lines(widget: &HotspotDetailWidget, width: u16, height: u16) -> Vec<String> {
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        Widget::render(widget, buf.area, &mut buf);
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn render_snapshot_with_hotspot() {
+        let hotspot = hotspot_payment();
+        let widget = HotspotDetailWidget::from_hotspot(Some(&hotspot));
+
+        let rendered = render_lines(&widget, 88, 14);
+
+        let expected = vec![
+            "┌────────────────────────────────── Selected Hotspot ──────────────────────────────────┐",
+            "│ Name: src/service/payment.rs                                                         │",
+            "│ Score: 310                                                                           │",
+            "│                                                                                      │",
+            "│ Why it ranks high:                                                                   │",
+            "│ - high churn: 220 lines changed over 10 touches                                      │",
+            "│ - many authors: 4 contributors touched this file                                     │",
+            "│ - sustained activity: recency signal 7                                               │",
+            "│ - recent change: last touched 2 days ago                                             │",
+            "│                                                                                      │",
+            "│ Churn trend / sparkline: coming in next step                                         │",
+            "│                                                                                      │",
+            "│                                                                                      │",
+            "└──────────────────────────────────────────────────────────────────────────────────────┘",
+        ];
+
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn render_snapshot_without_hotspot() {
+        let widget = HotspotDetailWidget::from_hotspot(None);
+
+        let rendered = render_lines(&widget, 64, 8);
+
+        let expected = vec![
+            "┌────────────────────── Selected Hotspot ──────────────────────┐",
+            "│ Name: [none]                                                 │",
+            "│ Score: 0                                                     │",
+            "│                                                              │",
+            "│ No hotspots available for this repository.                   │",
+            "│                                                              │",
+            "│                                                              │",
+            "└──────────────────────────────────────────────────────────────┘",
+        ];
+
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn from_hotspot_none_sets_fallback_values() {
+        let widget = HotspotDetailWidget::from_hotspot(None);
+
+        assert_eq!(widget.name, "[none]");
+        assert_eq!(widget.score, 0);
+        assert_eq!(widget.lines_touched, 0);
+        assert_eq!(widget.touches, 0);
+        assert_eq!(widget.author_count, 0);
+        assert_eq!(widget.recent_points, 0);
+        assert_eq!(widget.most_recent_days, 0);
+        assert!(!widget.has_hotspot);
+    }
+}

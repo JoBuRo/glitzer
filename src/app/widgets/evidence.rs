@@ -147,3 +147,190 @@ impl Widget for &EvidenceWidget {
         Widget::render(Paragraph::new(self.active_tab_text()), layout[1], buf);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::widgets::test_support::{hotspot_payment, hotspot_ui};
+
+    fn render_lines(widget: &EvidenceWidget, width: u16, height: u16) -> Vec<String> {
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        Widget::render(widget, buf.area, &mut buf);
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn render_snapshot_commits_tab_with_hotspot() {
+        let hotspot = hotspot_payment();
+        let widget = EvidenceWidget::new(EvidenceTab::Commits, Some(&hotspot));
+
+        let rendered = render_lines(&widget, 100, 12);
+
+        let expected = vec![
+            "┌───────────────────────────────────── Evidence / Explanation ─────────────────────────────────────┐",
+            "│  Commits | Co-change | Ownership | Notes                                                         │",
+            "│                                                                                                  │",
+            "│                                                                                                  │",
+            "│ Selected hotspot: src/service/payment.rs                                                         │",
+            "│ Recent commits and authors:                                                                      │",
+            "│ - abcdef0 Alice - 2026-03-01 - 19 lines - Refine payment retries                                 │",
+            "│ - 1234567 Bob - 2026-02-27 - 12 lines - Split gateway adapter                                    │",
+            "│                                                                                                  │",
+            "│                                                                                                  │",
+            "│                                                                                                  │",
+            "└──────────────────────────────────────────────────────────────────────────────────────────────────┘",
+        ];
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn render_snapshot_co_change_tab_with_hotspot() {
+        let hotspot = hotspot_payment();
+        let widget = EvidenceWidget::new(EvidenceTab::CoChange, Some(&hotspot));
+
+        let rendered = render_lines(&widget, 100, 12);
+
+        let expected = vec![
+            "┌───────────────────────────────────── Evidence / Explanation ─────────────────────────────────────┐",
+            "│  Commits | Co-change | Ownership | Notes                                                         │",
+            "│                                                                                                  │",
+            "│                                                                                                  │",
+            "│ Selected hotspot: src/service/payment.rs                                                         │",
+            "│ Top coupled files:                                                                               │",
+            "│ - src/lib.rs (8 commits together)                                                                │",
+            "│ - src/main.rs (3 commits together)                                                               │",
+            "│                                                                                                  │",
+            "│                                                                                                  │",
+            "│                                                                                                  │",
+            "└──────────────────────────────────────────────────────────────────────────────────────────────────┘",
+        ];
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn render_snapshot_ownership_tab_with_hotspot() {
+        let hotspot = hotspot_payment();
+        let widget = EvidenceWidget::new(EvidenceTab::Ownership, Some(&hotspot));
+
+        let rendered = render_lines(&widget, 100, 12);
+
+        let expected = vec![
+            "┌───────────────────────────────────── Evidence / Explanation ─────────────────────────────────────┐",
+            "│  Commits | Co-change | Ownership | Notes                                                         │",
+            "│                                                                                                  │",
+            "│                                                                                                  │",
+            "│ Selected hotspot: src/service/payment.rs                                                         │",
+            "│ Ownership distribution:                                                                          │",
+            "│ - Alice <alice@example.com> - 6 touches (60%)                                                    │",
+            "│ - Bob <bob@example.com> - 4 touches (40%)                                                        │",
+            "│                                                                                                  │",
+            "│                                                                                                  │",
+            "│                                                                                                  │",
+            "└──────────────────────────────────────────────────────────────────────────────────────────────────┘",
+        ];
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn render_snapshot_notes_tab_with_hotspot() {
+        let hotspot = hotspot_payment();
+        let widget = EvidenceWidget::new(EvidenceTab::Notes, Some(&hotspot));
+
+        let rendered = render_lines(&widget, 100, 12);
+
+        let expected = vec![
+            "┌───────────────────────────────────── Evidence / Explanation ─────────────────────────────────────┐",
+            "│  Commits | Co-change | Ownership | Notes                                                         │",
+            "│                                                                                                  │",
+            "│                                                                                                  │",
+            "│ Selected hotspot: src/service/payment.rs                                                         │",
+            "│ Risk explanation:                                                                                │",
+            "│ - High churn risk: frequent line movement suggests structural pressure.                          │",
+            "│ - Ownership is distributed; refactoring can reduce coordination overhead.                        │",
+            "│ - Recent activity spike: changes are active now, making this a timely candidate.                 │",
+            "│                                                                                                  │",
+            "│                                                                                                  │",
+            "└──────────────────────────────────────────────────────────────────────────────────────────────────┘",
+        ];
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn render_snapshot_without_hotspot() {
+        let widget = EvidenceWidget::new(EvidenceTab::Commits, None);
+
+        let rendered = render_lines(&widget, 88, 10);
+
+        let expected = vec![
+            "┌─────────────────────────────── Evidence / Explanation ───────────────────────────────┐",
+            "│  Commits | Co-change | Ownership | Notes                                             │",
+            "│                                                                                      │",
+            "│                                                                                      │",
+            "│ Selected hotspot: [none]                                                             │",
+            "│ Recent commits and authors:                                                          │",
+            "│ - No hotspot selected.                                                               │",
+            "│                                                                                      │",
+            "│                                                                                      │",
+            "└──────────────────────────────────────────────────────────────────────────────────────┘",
+        ];
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn set_active_tab_changes_rendered_content() {
+        let hotspot = hotspot_payment();
+        let mut widget = EvidenceWidget::new(EvidenceTab::Commits, Some(&hotspot));
+
+        let commits_render = render_lines(&widget, 90, 10).join("\n");
+        widget.set_active_tab(EvidenceTab::CoChange);
+        let co_change_render = render_lines(&widget, 90, 10).join("\n");
+
+        assert!(commits_render.contains("Recent commits and authors:"));
+        assert!(co_change_render.contains("Top coupled files:"));
+    }
+
+    #[test]
+    fn set_selected_hotspot_updates_all_tab_datasets() {
+        let hotspot_a = hotspot_payment();
+        let hotspot_b = hotspot_ui();
+        let mut widget = EvidenceWidget::new(EvidenceTab::Commits, Some(&hotspot_a));
+
+        widget.set_selected_hotspot(Some(&hotspot_b));
+
+        widget.set_active_tab(EvidenceTab::Commits);
+        let commits_render = render_lines(&widget, 90, 10).join("\n");
+        assert!(commits_render.contains("Selected hotspot: src/ui/render.rs"));
+        assert!(commits_render.contains("Tune viewport math"));
+
+        widget.set_active_tab(EvidenceTab::CoChange);
+        let co_change_render = render_lines(&widget, 90, 10).join("\n");
+        assert!(co_change_render.contains("src/ui/layout.rs (2 commits together)"));
+
+        widget.set_active_tab(EvidenceTab::Ownership);
+        let ownership_render = render_lines(&widget, 90, 10).join("\n");
+        assert!(ownership_render.contains("Eve <eve@example.com> - 5 touches (100%)"));
+    }
+
+    #[test]
+    fn evidence_tab_switch_wraps_left_and_right() {
+        assert!(matches!(
+            EvidenceTab::Commits.switch_left(),
+            EvidenceTab::Notes
+        ));
+        assert!(matches!(
+            EvidenceTab::Notes.switch_right(),
+            EvidenceTab::Commits
+        ));
+        assert_eq!(EvidenceTab::Commits.index(), 0);
+        assert_eq!(EvidenceTab::CoChange.index(), 1);
+        assert_eq!(EvidenceTab::Ownership.index(), 2);
+        assert_eq!(EvidenceTab::Notes.index(), 3);
+    }
+}

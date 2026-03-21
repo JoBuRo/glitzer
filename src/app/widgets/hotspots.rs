@@ -33,6 +33,19 @@ struct CommitEvidence {
     lines_touched: u64,
 }
 
+#[cfg(test)]
+pub(crate) struct HotspotTestData<'a> {
+    pub location: &'a str,
+    pub touches: u64,
+    pub lines_touched: u64,
+    pub recent_points: u64,
+    pub most_recent_days: i64,
+    pub authors: &'a [&'a str],
+    pub recent_commits: Vec<(&'a str, &'a str, &'a str, &'a str, u64)>,
+    pub co_changes: Vec<(&'a str, u64)>,
+    pub author_touches: Vec<(&'a str, u64)>,
+}
+
 impl Hotspot {
     pub fn score(&self) -> u64 {
         self.lines_touched
@@ -147,6 +160,45 @@ impl Hotspot {
             ownership_note.to_string(),
             recency_note.to_string(),
         ]
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_fixture(data: HotspotTestData<'_>) -> Self {
+        Hotspot {
+            location: data.location.to_string(),
+            touches: data.touches,
+            lines_touched: data.lines_touched,
+            recent_points: data.recent_points,
+            authors: data
+                .authors
+                .iter()
+                .map(|author| (*author).to_string())
+                .collect(),
+            most_recent_days: data.most_recent_days,
+            recent_commits: data
+                .recent_commits
+                .into_iter()
+                .map(
+                    |(hash, author, committed_at, message, commit_lines_touched)| CommitEvidence {
+                        hash: hash.to_string(),
+                        author: author.to_string(),
+                        committed_at: committed_at.to_string(),
+                        message: message.to_string(),
+                        lines_touched: commit_lines_touched,
+                    },
+                )
+                .collect(),
+            co_changes: data
+                .co_changes
+                .into_iter()
+                .map(|(path, count)| (path.to_string(), count))
+                .collect(),
+            author_touches: data
+                .author_touches
+                .into_iter()
+                .map(|(author, count)| (author.to_string(), count))
+                .collect(),
+        }
     }
 }
 
@@ -316,30 +368,7 @@ fn hotspot_list_item(rank: usize, hotspot: &Hotspot, selected: bool) -> ListItem
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn hotspot(
-        location: &str,
-        touches: u64,
-        lines_touched: u64,
-        most_recent_days: i64,
-        author_count: usize,
-    ) -> Hotspot {
-        let authors = (0..author_count)
-            .map(|i| format!("author{i}@example.com"))
-            .collect();
-
-        Hotspot {
-            location: location.to_string(),
-            touches,
-            lines_touched,
-            recent_points: 2,
-            authors,
-            most_recent_days,
-            recent_commits: Vec::new(),
-            co_changes: HashMap::new(),
-            author_touches: HashMap::new(),
-        }
-    }
+    use crate::app::widgets::test_support::hotspot_with_counts;
 
     fn render_lines(hotspots: &Hotspots, width: u16, height: u16) -> Vec<String> {
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
@@ -358,8 +387,8 @@ mod tests {
     fn render_snapshot_basic_list() {
         let hotspots = Hotspots {
             items: vec![
-                hotspot("src/app.rs", 6, 42, 3, 1),
-                hotspot("src/lib.rs", 4, 18, 9, 1),
+                hotspot_with_counts("src/app.rs", 6, 42, 3, 1),
+                hotspot_with_counts("src/lib.rs", 4, 18, 9, 1),
             ],
             selected_index: 0,
         };
@@ -383,7 +412,7 @@ mod tests {
     #[test]
     fn render_snapshot_selection_window_middle() {
         let items: Vec<Hotspot> = (0..10)
-            .map(|i| hotspot(&format!("file_{i}.rs"), i + 1, (i + 1) * 10, i as i64, 1))
+            .map(|i| hotspot_with_counts(&format!("file_{i}.rs"), i + 1, (i + 1) * 10, i as i64, 1))
             .collect();
         let hotspots = Hotspots {
             items,
@@ -415,7 +444,7 @@ mod tests {
     #[test]
     fn render_snapshot_selection_window_end() {
         let items: Vec<Hotspot> = (0..8)
-            .map(|i| hotspot(&format!("file_{i}.rs"), i + 1, (i + 1) * 10, i as i64, 1))
+            .map(|i| hotspot_with_counts(&format!("file_{i}.rs"), i + 1, (i + 1) * 10, i as i64, 1))
             .collect();
         let hotspots = Hotspots {
             items,
@@ -468,7 +497,10 @@ mod tests {
     #[test]
     fn set_selected_index_clamps_to_last_item() {
         let mut hotspots = Hotspots {
-            items: vec![hotspot("a.rs", 1, 1, 1, 1), hotspot("b.rs", 1, 1, 1, 1)],
+            items: vec![
+                hotspot_with_counts("a.rs", 1, 1, 1, 1),
+                hotspot_with_counts("b.rs", 1, 1, 1, 1),
+            ],
             selected_index: 0,
         };
 
@@ -506,7 +538,7 @@ mod tests {
     #[test]
     fn render_rank_numbers_are_global_not_window_local() {
         let items: Vec<Hotspot> = (0..8)
-            .map(|i| hotspot(&format!("file_{i}.rs"), i + 1, (i + 1) * 10, i as i64, 1))
+            .map(|i| hotspot_with_counts(&format!("file_{i}.rs"), i + 1, (i + 1) * 10, i as i64, 1))
             .collect();
         let hotspots = Hotspots {
             items,
