@@ -43,11 +43,19 @@ impl Directory {
         let mut changed = Vec::new();
 
         for (name, new_tree) in &self.content {
+            let child_root = root.join(name);
             if let Some(other_tree) = old.content.get(name) {
-                changed.extend(new_tree.file_changes(Some(other_tree), root));
+                match new_tree {
+                    FileTree::Node(_) => {
+                        changed.extend(new_tree.file_changes(Some(other_tree), &child_root));
+                    }
+                    FileTree::Leaf(_) => {
+                        changed.extend(new_tree.file_changes(Some(other_tree), root));
+                    }
+                }
             } else {
                 changed.push(FileChange {
-                    location: root.join(name),
+                    location: child_root,
                     _change_type: FileChangeType::Added,
                     diff: Diff {
                         lines_added: new_tree.size() as u64,
@@ -413,5 +421,105 @@ mod tests {
         } else {
             panic!("Expected root to be a Directory node");
         }
+    }
+
+    #[test]
+    fn test_file_changes_preserve_nested_directory_path() {
+        let repo = MockRepo {
+            objects: HashMap::from([
+                (
+                    "tree_new_root".to_string(),
+                    GitObject::Tree(Tree {
+                        hash: "tree_new_root".to_string(),
+                        entries: vec![TreeEntry {
+                            name: "src".to_string(),
+                            hash: "tree_new_src".to_string(),
+                            mode: EntryMode::Tree,
+                        }],
+                    }),
+                ),
+                (
+                    "tree_old_root".to_string(),
+                    GitObject::Tree(Tree {
+                        hash: "tree_old_root".to_string(),
+                        entries: vec![TreeEntry {
+                            name: "src".to_string(),
+                            hash: "tree_old_src".to_string(),
+                            mode: EntryMode::Tree,
+                        }],
+                    }),
+                ),
+                (
+                    "tree_new_src".to_string(),
+                    GitObject::Tree(Tree {
+                        hash: "tree_new_src".to_string(),
+                        entries: vec![TreeEntry {
+                            name: "main.rs".to_string(),
+                            hash: "blob_new_main".to_string(),
+                            mode: EntryMode::Text,
+                        }],
+                    }),
+                ),
+                (
+                    "tree_old_src".to_string(),
+                    GitObject::Tree(Tree {
+                        hash: "tree_old_src".to_string(),
+                        entries: vec![TreeEntry {
+                            name: "main.rs".to_string(),
+                            hash: "blob_old_main".to_string(),
+                            mode: EntryMode::Text,
+                        }],
+                    }),
+                ),
+                (
+                    "blob_new_main".to_string(),
+                    GitObject::Blob(Blob {
+                        hash: "blob_new_main".to_string(),
+                        content: Bytes::from("fn main() {\n    println!(\"new\");\n}\n"),
+                    }),
+                ),
+                (
+                    "blob_old_main".to_string(),
+                    GitObject::Blob(Blob {
+                        hash: "blob_old_main".to_string(),
+                        content: Bytes::from("fn main() {\n    println!(\"old\");\n}\n"),
+                    }),
+                ),
+            ]),
+        };
+
+        let author = Author {
+            name: "Test Author".to_string(),
+            email: "test@example.com".to_string(),
+        };
+
+        let new_commit = Commit {
+            hash: "new_commit".to_string(),
+            parent: Some("old_commit".to_string()),
+            tree: "tree_new_root".to_string(),
+            message: "new".to_string(),
+            author: author.clone(),
+            authored_at: chrono::Utc::now(),
+            _committer: author.clone(),
+            committed_at: chrono::Utc::now(),
+        };
+        let old_commit = Commit {
+            hash: "old_commit".to_string(),
+            parent: None,
+            tree: "tree_old_root".to_string(),
+            message: "old".to_string(),
+            author: author.clone(),
+            authored_at: chrono::Utc::now(),
+            _committer: author,
+            committed_at: chrono::Utc::now(),
+        };
+
+        let new_tree = FileTree::from_commit(&new_commit, &repo).unwrap();
+        let old_tree = FileTree::from_commit(&old_commit, &repo).unwrap();
+
+        let changes = new_tree.file_changes(Some(&old_tree), repo.get_path());
+
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].location, PathBuf::from("mock_repo/src/main.rs"));
     }
 }

@@ -42,6 +42,14 @@ Near-term scope:
   - glitzer module for repository analysis and evidence generation
 - Avoid introducing unrelated architecture changes during focused feature work.
 
+## Development Workflow (TDD)
+
+- Use a test-driven workflow for code changes whenever feasible.
+- Implement one or more failing tests first to capture the intended behavior/specification.
+- Make the minimal code change required to pass those tests.
+- Refactor after tests pass while keeping the suite green.
+- Prefer small, incremental red-green-refactor cycles over large untested changes.
+
 ## UI Test Guidance
 
 - Prefer widget-level render tests in the same file using `#[cfg(test)] mod tests`.
