@@ -25,11 +25,7 @@ impl MainView {
     pub fn new(repo: &impl RepositoryAccess) -> Result<Self> {
         let hotspots = Hotspots::new(repo)?;
         let hotspot_detail = HotspotDetailWidget::from_hotspot(hotspots.selected_hotspot());
-        let selected_name = hotspots
-            .selected_hotspot()
-            .map(|hotspot| hotspot.location().to_string())
-            .unwrap_or("[none]".to_string());
-        let evidence = EvidenceWidget::new(EvidenceTab::Commits, selected_name);
+        let evidence = EvidenceWidget::new(EvidenceTab::Commits, hotspots.selected_hotspot());
 
         Ok(MainView {
             hotspots,
@@ -52,14 +48,8 @@ impl MainView {
 
     fn refresh_selection_widgets(&mut self) {
         self.hotspot_detail = HotspotDetailWidget::from_hotspot(self.hotspots.selected_hotspot());
-
-        let selected_name = self
-            .hotspots
-            .selected_hotspot()
-            .map(|hotspot| hotspot.location().to_string())
-            .unwrap_or("[none]".to_string());
-
-        self.evidence.set_selected_hotspot_name(selected_name);
+        self.evidence
+            .set_selected_hotspot(self.hotspots.selected_hotspot());
     }
 }
 
