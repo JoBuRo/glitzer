@@ -1,6 +1,7 @@
 use ratatui::widgets::Block;
 pub mod authors;
 pub mod history;
+pub mod hotspots;
 pub mod log;
 
 pub trait SelectableWidget {

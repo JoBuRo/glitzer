@@ -1,6 +1,6 @@
 use super::super::widgets::authors::Authors;
 use super::super::widgets::history::History;
-use super::super::widgets::log::Log;
+use super::super::widgets::hotspots::Hotspots;
 use super::View;
 use crate::{app::widgets::SelectableWidget, glitzer::repo::RepositoryAccess};
 use color_eyre::eyre::Result;
@@ -14,33 +14,33 @@ use ratatui::{
 
 #[derive(Debug)]
 enum Selection {
-    Log,
-    History,
     Authors,
+    History,
+    Hotspots,
 }
 
 #[derive(Debug)]
 pub struct MainView {
-    log: Log,
-    history: History,
     authors: Authors,
+    history: History,
+    hotspots: Hotspots,
     selected: Option<Selection>,
 }
 
 impl MainView {
     pub fn new(repo: &impl RepositoryAccess) -> Result<Self> {
         Ok(MainView {
-            log: Log::new(repo.get_commits()?),
-            history: History::new(repo.get_commits()?),
             authors: Authors::new(repo)?,
+            history: History::new(repo.get_commits()?),
+            hotspots: Hotspots::new(repo)?,
             selected: None,
         })
     }
 
     fn unselect_widgets(&mut self) {
-        self.log.select(false);
-        self.history.select(false);
         self.authors.select(false);
+        self.history.select(false);
+        self.hotspots.select(false);
     }
 }
 
@@ -64,8 +64,8 @@ impl View for MainView {
             .margin(1)
             .split(outer_layout[0]);
         frame.render_widget(block, frame.area());
-        frame.render_widget(&self.authors, upper_layout[0]);
-        frame.render_widget(&self.log, upper_layout[1]);
+        frame.render_widget(&self.hotspots, upper_layout[0]);
+        frame.render_widget(&self.authors, upper_layout[1]);
         frame.render_widget(&self.history, outer_layout[1].inner(Margin::new(1, 1)));
     }
 
@@ -75,24 +75,24 @@ impl View for MainView {
                 std::process::exit(0);
             }
             KeyCode::Char('h') => match self.selected {
-                Some(Selection::Log) => self.selected = Some(Selection::Authors),
-                None => self.selected = Some(Selection::Authors),
+                Some(Selection::Authors) => self.selected = Some(Selection::Hotspots),
+                None => self.selected = Some(Selection::Hotspots),
                 _ => {}
             },
             KeyCode::Char('j') => match self.selected {
-                Some(Selection::Log) => self.selected = Some(Selection::History),
                 Some(Selection::Authors) => self.selected = Some(Selection::History),
+                Some(Selection::Hotspots) => self.selected = Some(Selection::History),
                 None => self.selected = Some(Selection::History),
                 _ => {}
             },
             KeyCode::Char('k') => match self.selected {
-                Some(Selection::History) => self.selected = Some(Selection::Log),
-                None => self.selected = Some(Selection::Log),
+                Some(Selection::History) => self.selected = Some(Selection::Authors),
+                None => self.selected = Some(Selection::Authors),
                 _ => {}
             },
             KeyCode::Char('l') => match self.selected {
-                Some(Selection::Authors) => self.selected = Some(Selection::Log),
-                None => self.selected = Some(Selection::Log),
+                Some(Selection::Hotspots) => self.selected = Some(Selection::Authors),
+                None => self.selected = Some(Selection::Authors),
                 _ => {}
             },
             _ => {}
@@ -100,9 +100,9 @@ impl View for MainView {
 
         self.unselect_widgets();
         match self.selected {
-            Some(Selection::Log) => self.log.select(true),
-            Some(Selection::History) => self.history.select(true),
             Some(Selection::Authors) => self.authors.select(true),
+            Some(Selection::History) => self.history.select(true),
+            Some(Selection::Hotspots) => self.hotspots.select(true),
             None => {}
         }
     }
