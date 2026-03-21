@@ -42,6 +42,24 @@ Near-term scope:
   - glitzer module for repository analysis and evidence generation
 - Avoid introducing unrelated architecture changes during focused feature work.
 
+## UI Test Guidance
+
+- Prefer widget-level render tests in the same file using `#[cfg(test)] mod tests`.
+- For `ratatui` widgets, use snapshot-style assertions:
+  - create a small fixed `Buffer` with `Buffer::empty(Rect::new(...))`
+  - render the widget into that buffer
+  - compare the rendered lines to an explicit visual `vec!["..."]` expectation
+- Build the suite around user-visible behavior (specification), not private implementation details.
+- Cover expected interaction states, not only the happy path:
+  - basic render snapshot
+  - selection/window movement snapshots (middle and end)
+  - empty-state snapshot
+  - state clamping/safety behavior (index bounds, `None` selection)
+- Prefer assertions on full rendered output for layout/copy stability; add style assertions only when style is the behavior under test.
+- Keep test fixtures small and explicit so score/rank/evidence text can be predicted and asserted exactly.
+- Keep snapshots deterministic (fixed dimensions, fixed test data, no clock-dependent values unless injected).
+- When updating widget layout/copy intentionally, update the expected snapshot strings in the same commit.
+
 ## Commit Guidance
 
 - Keep agent-authored changes scoped so they fit in one commit or a small number of commits.
