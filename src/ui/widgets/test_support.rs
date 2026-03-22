@@ -1,4 +1,4 @@
-use crate::app::widgets::hotspots::{Hotspot, HotspotTestData};
+use crate::ui::widgets::hotspots::{Hotspot, HotspotTestData};
 
 pub(crate) fn hotspot_with_counts(
     location: &str,

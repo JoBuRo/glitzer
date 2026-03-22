@@ -1,10 +1,7 @@
-mod app;
-mod glitzer;
-
-use app::App;
 use clap::Parser;
 use color_eyre::Result;
-use glitzer::repo::Repository;
+use glitzer::git::repo::Repository;
+use glitzer::ui::app::App;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

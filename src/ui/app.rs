@@ -1,14 +1,11 @@
-mod view;
-mod widgets;
-
 use std::io;
 
 use color_eyre::eyre::Result;
 use crossterm::event;
 use ratatui::Frame;
 
-use super::glitzer::repo::RepositoryAccess;
-use view::{View, main_view::MainView};
+use crate::git::repo::RepositoryAccess;
+use crate::ui::view::{View, main_view::MainView};
 
 pub struct App {
     current_view: Box<dyn View>,

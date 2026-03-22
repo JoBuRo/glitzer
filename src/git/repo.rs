@@ -325,13 +325,12 @@ mod tests {
 
         fn get_file_changes(&self, commit: &Commit) -> Result<Vec<FileChange>> {
             let parent_tree: Option<FileTree> = match &commit.parent {
-                Some(parent_hash) => Some(FileTree::from_commit(
-                    &self.get_commit(&parent_hash)?,
-                    self,
-                )?),
+                Some(parent_hash) => {
+                    Some(FileTree::from_commit(&self.get_commit(parent_hash)?, self)?)
+                }
                 None => None,
             };
-            let tree = FileTree::from_commit(&commit, self)?;
+            let tree = FileTree::from_commit(commit, self)?;
             Ok(tree.file_changes(parent_tree.as_ref(), self.get_path()))
         }
     }

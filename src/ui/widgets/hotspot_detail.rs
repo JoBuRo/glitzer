@@ -46,7 +46,7 @@ impl HotspotDetailWidget {
         }
     }
 
-    fn block(&self) -> Block {
+    fn block(&self) -> Block<'_> {
         Block::bordered()
             .title(Line::from(" Selected Hotspot ".bold()).centered())
             .border_set(border::PLAIN)
@@ -97,7 +97,7 @@ impl Widget for &HotspotDetailWidget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::widgets::test_support::hotspot_payment;
+    use crate::ui::widgets::test_support::hotspot_payment;
 
     fn render_lines(widget: &HotspotDetailWidget, width: u16, height: u16) -> Vec<String> {
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));

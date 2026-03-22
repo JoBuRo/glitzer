@@ -9,7 +9,7 @@ use ratatui::{
     widgets::{Block, List, ListItem, Padding, Widget},
 };
 
-use crate::glitzer::repo::RepositoryAccess;
+use crate::git::repo::RepositoryAccess;
 
 #[derive(Debug)]
 pub struct Hotspot {
@@ -297,6 +297,10 @@ impl Hotspots {
         self.items.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     pub fn set_selected_index(&mut self, index: usize) {
         if self.items.is_empty() {
             self.selected_index = 0;
@@ -309,7 +313,7 @@ impl Hotspots {
         self.items.get(self.selected_index)
     }
 
-    fn block(&self) -> Block {
+    fn block(&self) -> Block<'_> {
         let title = Line::from(" Refactoring Attention ".bold());
         Block::bordered()
             .title(title.centered())
@@ -368,7 +372,7 @@ fn hotspot_list_item(rank: usize, hotspot: &Hotspot, selected: bool) -> ListItem
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::widgets::test_support::hotspot_with_counts;
+    use crate::ui::widgets::test_support::hotspot_with_counts;
 
     fn render_lines(hotspots: &Hotspots, width: u16, height: u16) -> Vec<String> {
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));

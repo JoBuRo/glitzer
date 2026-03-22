@@ -120,7 +120,7 @@ impl EvidenceWidget {
         Text::from(lines)
     }
 
-    fn block(&self) -> Block {
+    fn block(&self) -> Block<'_> {
         Block::bordered()
             .title(Line::from(" Evidence / Explanation ".bold()).centered())
             .border_set(border::PLAIN)
@@ -151,7 +151,7 @@ impl Widget for &EvidenceWidget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::widgets::test_support::{hotspot_payment, hotspot_ui};
+    use crate::ui::widgets::test_support::{hotspot_payment, hotspot_ui};
 
     fn render_lines(widget: &EvidenceWidget, width: u16, height: u16) -> Vec<String> {
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));

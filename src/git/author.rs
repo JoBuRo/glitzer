@@ -1,6 +1,6 @@
-use std::{collections::HashMap, path::Path, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
-use crate::glitzer::{
+use crate::git::{
     file_tree::{FileChange, FileTree},
     git_objects::Commit,
     repo::RepositoryAccess,
@@ -67,13 +67,14 @@ fn aggregate_changes(change_map: &mut HashMap<PathBuf, u64>, changes: Vec<FileCh
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::glitzer::git_objects::{
+    use crate::git::git_objects::{
         Author as GitAuthor, Blob, Commit, EntryMode, GitObject, Tree, TreeEntry,
     };
     use bytes::Bytes;
     use chrono::Utc;
     use color_eyre::eyre::eyre;
     use std::collections::HashMap;
+    use std::path::Path;
 
     struct MockRepo {
         objects: HashMap<String, GitObject>,

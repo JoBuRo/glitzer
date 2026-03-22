@@ -8,13 +8,13 @@ This file helps coding agents quickly understand the Glitzer workspace, product 
 - App type: Terminal UI (TUI) using `ratatui` and `crossterm`
 - Entry point: `src/main.rs`
 - Main modules:
-  - `src/app/` - TUI composition, view state, widgets, and keyboard interactions
-  - `src/glitzer/` - Git data model and analysis logic (commits, diffs, file changes, hotspot signals)
+  - `src/ui/` - TUI composition, view state, widgets, and keyboard interactions
+  - `src/git/` - Git data model and analysis logic (commits, diffs, file changes, hotspot signals)
 
 Current active widget set:
-- `src/app/widgets/hotspots.rs`
-- `src/app/widgets/hotspot_detail.rs`
-- `src/app/widgets/evidence.rs`
+- `src/ui/widgets/hotspots.rs`
+- `src/ui/widgets/hotspot_detail.rs`
+- `src/ui/widgets/evidence.rs`
 
 ## Product Direction
 
@@ -38,8 +38,8 @@ Near-term scope:
 - Preserve the current product framing: decision support for refactoring, not generic repo browsing.
 - Prefer incremental changes that keep the app runnable after each step.
 - Keep UI and analysis responsibilities separate:
-  - app/view/widgets for rendering and interactions
-  - glitzer module for repository analysis and evidence generation
+  - `ui` module for rendering and interactions
+  - `git` module for repository analysis and evidence generation
 - Avoid introducing unrelated architecture changes during focused feature work.
 
 ## Development Workflow (TDD)

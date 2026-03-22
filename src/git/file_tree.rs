@@ -255,7 +255,7 @@ impl FileTree {
 
 #[cfg(test)]
 mod tests {
-    use crate::glitzer::git_objects::{Author, Blob, Tree};
+    use crate::git::git_objects::{Author, Blob, Tree};
 
     use super::*;
 

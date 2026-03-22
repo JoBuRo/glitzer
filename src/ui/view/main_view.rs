@@ -2,7 +2,7 @@ use super::super::widgets::evidence::{EvidenceTab, EvidenceWidget};
 use super::super::widgets::hotspot_detail::HotspotDetailWidget;
 use super::super::widgets::hotspots::Hotspots;
 use super::View;
-use crate::glitzer::repo::RepositoryAccess;
+use crate::git::repo::RepositoryAccess;
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -94,7 +94,7 @@ impl View for MainView {
                 std::process::exit(0);
             }
             KeyCode::Char('j') => {
-                if self.hotspots.len() > 0 {
+                if !self.hotspots.is_empty() {
                     self.selected_hotspot_index = (self.selected_hotspot_index + 1)
                         .min(self.hotspots.len().saturating_sub(1));
                     self.hotspots
