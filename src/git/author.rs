@@ -2,10 +2,10 @@
 use std::{collections::HashMap, path::PathBuf};
 
 #[cfg(test)]
+use crate::git::file_tree::TreeAccess;
+#[cfg(test)]
 use crate::git::file_tree::{FileChange, FileTree};
 use crate::git::git_objects::Commit;
-#[cfg(test)]
-use crate::git::repo::GitDataAccess;
 #[cfg(test)]
 use color_eyre::eyre::Result;
 
@@ -38,7 +38,7 @@ impl Author {
     }
 
     #[cfg(test)]
-    pub(crate) fn get_changed_files(&self, repo: &impl GitDataAccess) -> Result<Vec<PathBuf>> {
+    pub(crate) fn get_changed_files(&self, repo: &impl AuthorRepoAccess) -> Result<Vec<PathBuf>> {
         let mut change_map: HashMap<PathBuf, u64> = HashMap::new();
         for commit in &self.commits {
             let tree = FileTree::from_commit(commit, repo)?;
@@ -54,6 +54,11 @@ impl Author {
         changed_files.sort_by(|(_, a), (_, b)| a.cmp(b));
         Ok(changed_files.iter().map(|(path, _)| path.clone()).collect())
     }
+}
+
+#[cfg(test)]
+pub(crate) trait AuthorRepoAccess: TreeAccess {
+    fn get_commit(&self, hash: &str) -> Result<Commit>;
 }
 
 #[cfg(test)]
@@ -84,32 +89,24 @@ mod tests {
         objects: HashMap<String, GitObject>,
     }
 
-    impl GitDataAccess for MockRepo {
-        // Not used by these tests
-        fn get_commits(&self) -> Result<Vec<Commit>> {
-            Ok(vec![])
-        }
-
-        fn get_file_changes(&self, _: &Commit) -> Result<Vec<FileChange>> {
-            Ok(vec![])
-        }
-
+    impl TreeAccess for MockRepo {
         fn get_object(&self, hash: &str) -> Result<GitObject> {
             self.objects
                 .get(hash)
                 .cloned()
                 .ok_or_else(|| eyre!("Object with hash {} not found", hash))
         }
+        fn get_path(&self) -> &Path {
+            Path::new("mock_repo")
+        }
+    }
 
+    impl AuthorRepoAccess for MockRepo {
         fn get_commit(&self, hash: &str) -> Result<Commit> {
             if let GitObject::Commit(commit) = self.get_object(hash)? {
                 return Ok(commit);
             }
             Err(eyre!("Object with hash {} is not a commit", hash))
-        }
-
-        fn get_path(&self) -> &Path {
-            Path::new("mock_repo")
         }
     }
 

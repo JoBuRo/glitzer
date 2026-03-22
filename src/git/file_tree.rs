@@ -4,10 +4,13 @@ use bytes::Bytes;
 use color_eyre::{Result, eyre::eyre};
 use std::path::{Path, PathBuf};
 
-use super::repo::GitDataAccess;
-
 use super::diff::{Diff, diff};
 use super::git_objects::{Commit, EntryMode, GitObject, TreeEntry};
+
+pub(crate) trait TreeAccess {
+    fn get_object(&self, hash: &str) -> Result<GitObject>;
+    fn get_path(&self) -> &Path;
+}
 
 #[derive(Debug, Clone)]
 pub struct FileInfo {
@@ -184,7 +187,7 @@ impl FileTree {
         }
     }
 
-    pub fn from_commit(commit: &Commit, repo: &impl GitDataAccess) -> Result<Self> {
+    pub fn from_commit(commit: &Commit, repo: &impl TreeAccess) -> Result<Self> {
         let tree_object = repo.get_object(&commit.tree)?;
 
         if let GitObject::Tree(tree) = tree_object {
@@ -211,7 +214,7 @@ impl FileTree {
         ))
     }
 
-    fn from_entry(entry: &TreeEntry, repo: &impl GitDataAccess) -> Result<Self> {
+    fn from_entry(entry: &TreeEntry, repo: &impl TreeAccess) -> Result<Self> {
         match repo.get_object(&entry.hash)? {
             GitObject::Blob(blob) => match std::str::from_utf8(&blob.content) {
                 Ok(content_str) => Ok(FileTree::Leaf(LeafFile::Source(SourceFile {
@@ -263,40 +266,12 @@ mod tests {
         objects: HashMap<String, GitObject>,
     }
 
-    impl GitDataAccess for MockRepo {
-        fn get_file_changes(&self, _commit: &Commit) -> Result<Vec<FileChange>> {
-            Ok(vec![])
-        }
-
-        fn get_commits(&self) -> Result<Vec<Commit>> {
-            let author = Author {
-                name: "Test Author".to_string(),
-                email: "".to_string(),
-            };
-            Ok(vec![Commit {
-                hash: "0".to_string(),
-                parent: None,
-                tree: "1".to_string(),
-                message: "Initial commit".to_string(),
-                author: author.clone(),
-                authored_at: chrono::Utc::now(),
-                _committer: author,
-                committed_at: chrono::Utc::now(),
-            }])
-        }
-
+    impl TreeAccess for MockRepo {
         fn get_object(&self, hash: &str) -> Result<GitObject> {
             self.objects
                 .get(hash)
                 .cloned()
                 .ok_or_else(|| eyre!("Object with hash {} not found", hash))
-        }
-
-        fn get_commit(&self, hash: &str) -> Result<Commit> {
-            if let GitObject::Commit(commit) = self.get_object(hash)? {
-                return Ok(commit);
-            }
-            Err(eyre!("Object with hash {} is not a commit", hash))
         }
 
         fn get_path(&self) -> &Path {
@@ -368,7 +343,22 @@ mod tests {
             ]),
         };
 
-        let commit = repo.get_commits().unwrap().pop().unwrap();
+        let commit = Commit {
+            hash: "0".to_string(),
+            parent: None,
+            tree: "1".to_string(),
+            message: "Initial commit".to_string(),
+            author: Author {
+                name: "Test Author".to_string(),
+                email: "".to_string(),
+            },
+            authored_at: chrono::Utc::now(),
+            _committer: Author {
+                name: "Test Author".to_string(),
+                email: "".to_string(),
+            },
+            committed_at: chrono::Utc::now(),
+        };
 
         let file_tree = FileTree::from_commit(&commit, &repo).unwrap();
 
