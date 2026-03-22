@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, Padding, Paragraph, Widget},
 };
 
-use super::hotspots::Hotspot;
+use crate::models::hotspot::Hotspot;
 
 #[derive(Debug)]
 pub struct HotspotDetailWidget {

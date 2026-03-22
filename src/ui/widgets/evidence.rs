@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, Padding, Paragraph, Tabs, Widget},
 };
 
-use super::hotspots::Hotspot;
+use crate::models::hotspot::Hotspot;
 
 #[derive(Debug, Clone, Copy)]
 pub enum EvidenceTab {
