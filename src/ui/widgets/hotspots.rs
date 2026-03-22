@@ -1,7 +1,3 @@
-use std::collections::{HashMap, HashSet};
-
-use chrono::Utc;
-use color_eyre::eyre::Result;
 use ratatui::{
     prelude::*,
     symbols::border,
@@ -9,8 +5,7 @@ use ratatui::{
     widgets::{Block, List, ListItem, Padding, Widget},
 };
 
-use crate::git::repo::RepositoryAccess;
-use crate::models::hotspot::{CommitEvidence, Hotspot};
+use crate::models::hotspot::Hotspot;
 
 #[derive(Debug)]
 pub struct Hotspots {
@@ -19,88 +14,11 @@ pub struct Hotspots {
 }
 
 impl Hotspots {
-    pub fn new(repo: &impl RepositoryAccess) -> Result<Self> {
-        let mut by_path: HashMap<String, Hotspot> = HashMap::new();
-        let now = Utc::now();
-        let commits = repo.get_commits()?;
-
-        for commit in commits.iter().take(300) {
-            let age_days = now
-                .signed_duration_since(commit.authored_at)
-                .num_days()
-                .max(0);
-            let recent_points = match age_days {
-                0..=7 => 3,
-                8..=30 => 2,
-                _ => 1,
-            };
-
-            let changes = repo.get_file_changes(commit)?;
-            let mut changed_paths = Vec::new();
-
-            for change in changes {
-                let location = if let Ok(relative) = change.location.strip_prefix(repo.get_path()) {
-                    relative.to_string_lossy().to_string()
-                } else {
-                    change.location.to_string_lossy().to_string()
-                };
-
-                changed_paths.push(location.clone());
-
-                let entry = by_path.entry(location.clone()).or_insert_with(|| Hotspot {
-                    location,
-                    touches: 0,
-                    lines_touched: 0,
-                    recent_points: 0,
-                    authors: HashSet::new(),
-                    most_recent_days: age_days,
-                    recent_commits: Vec::new(),
-                    co_changes: HashMap::new(),
-                    author_touches: HashMap::new(),
-                });
-
-                entry.touches += 1;
-                let changed_lines = change.diff.lines_touched();
-                entry.lines_touched += changed_lines;
-                entry.recent_points += recent_points;
-                entry.authors.insert(commit.author.email.clone());
-                entry.most_recent_days = entry.most_recent_days.min(age_days);
-
-                let author_key = format!("{} <{}>", commit.author.name, commit.author.email);
-                *entry.author_touches.entry(author_key).or_insert(0) += 1;
-
-                if entry.recent_commits.len() < 8 {
-                    entry.recent_commits.push(CommitEvidence {
-                        hash: commit.hash.clone(),
-                        author: commit.author.name.clone(),
-                        committed_at: commit.committed_at.format("%Y-%m-%d").to_string(),
-                        message: commit.message.lines().next().unwrap_or("").to_string(),
-                        lines_touched: changed_lines,
-                    });
-                }
-            }
-
-            changed_paths.sort();
-            changed_paths.dedup();
-
-            for path in &changed_paths {
-                if let Some(entry) = by_path.get_mut(path) {
-                    for other in &changed_paths {
-                        if other != path {
-                            *entry.co_changes.entry(other.clone()).or_insert(0) += 1;
-                        }
-                    }
-                }
-            }
-        }
-
-        let mut items: Vec<Hotspot> = by_path.into_values().collect();
-        items.sort_by_key(|hotspot| std::cmp::Reverse(hotspot.score()));
-
-        Ok(Hotspots {
+    pub fn from_items(items: Vec<Hotspot>) -> Self {
+        Hotspots {
             items,
             selected_index: 0,
-        })
+        }
     }
 
     pub fn len(&self) -> usize {

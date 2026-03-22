@@ -4,17 +4,17 @@ use color_eyre::eyre::Result;
 use crossterm::event;
 use ratatui::Frame;
 
-use crate::git::repo::RepositoryAccess;
-use crate::ui::view::{View, main_view::MainView};
+use crate::models::hotspot_source::HotspotSource;
+use crate::ui::view::{main_view::MainView, View};
 
 pub struct App {
     current_view: Box<dyn View>,
 }
 
 impl App {
-    pub fn new(repo: impl RepositoryAccess) -> Result<Self> {
+    pub fn new(source: impl HotspotSource) -> Result<Self> {
         Ok(App {
-            current_view: Box::new(MainView::new(&repo)?),
+            current_view: Box::new(MainView::new(&source)?),
         })
     }
 

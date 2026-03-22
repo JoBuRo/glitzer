@@ -2,7 +2,7 @@ use super::super::widgets::evidence::{EvidenceTab, EvidenceWidget};
 use super::super::widgets::hotspot_detail::HotspotDetailWidget;
 use super::super::widgets::hotspots::Hotspots;
 use super::View;
-use crate::git::repo::RepositoryAccess;
+use crate::models::hotspot_source::HotspotSource;
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -22,8 +22,8 @@ pub struct MainView {
 }
 
 impl MainView {
-    pub fn new(repo: &impl RepositoryAccess) -> Result<Self> {
-        let hotspots = Hotspots::new(repo)?;
+    pub fn new(source: &impl HotspotSource) -> Result<Self> {
+        let hotspots = Hotspots::from_items(source.hotspots(300)?);
         let hotspot_detail = HotspotDetailWidget::from_hotspot(hotspots.selected_hotspot());
         let evidence = EvidenceWidget::new(EvidenceTab::Commits, hotspots.selected_hotspot());
 

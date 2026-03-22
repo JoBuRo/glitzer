@@ -3,9 +3,12 @@ use super::author::Author;
 use super::file_tree::{FileChange, FileTree};
 use super::git_objects::*;
 use super::parser::*;
+use crate::models::hotspot::{CommitEvidence, Hotspot};
+use crate::models::hotspot_source::HotspotSource;
 use bytes::Bytes;
+use chrono::Utc;
 use color_eyre::eyre::eyre;
-use color_eyre::{Result, eyre::WrapErr};
+use color_eyre::{eyre::WrapErr, Result};
 use flate2::read::ZlibDecoder;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
@@ -132,6 +135,95 @@ impl Repository {
             current_branch,
         };
         Ok(repo)
+    }
+}
+
+pub(crate) fn build_hotspots(
+    repo: &impl RepositoryAccess,
+    max_commits: usize,
+) -> Result<Vec<Hotspot>> {
+    let mut by_path: HashMap<String, Hotspot> = HashMap::new();
+    let now = Utc::now();
+    let commits = repo.get_commits()?;
+
+    for commit in commits.iter().take(max_commits) {
+        let age_days = now
+            .signed_duration_since(commit.authored_at)
+            .num_days()
+            .max(0);
+        let recent_points = match age_days {
+            0..=7 => 3,
+            8..=30 => 2,
+            _ => 1,
+        };
+
+        let changes = repo.get_file_changes(commit)?;
+        let mut changed_paths = Vec::new();
+
+        for change in changes {
+            let location = if let Ok(relative) = change.location.strip_prefix(repo.get_path()) {
+                relative.to_string_lossy().to_string()
+            } else {
+                change.location.to_string_lossy().to_string()
+            };
+
+            changed_paths.push(location.clone());
+
+            let entry = by_path.entry(location.clone()).or_insert_with(|| Hotspot {
+                location,
+                touches: 0,
+                lines_touched: 0,
+                recent_points: 0,
+                authors: std::collections::HashSet::new(),
+                most_recent_days: age_days,
+                recent_commits: Vec::new(),
+                co_changes: HashMap::new(),
+                author_touches: HashMap::new(),
+            });
+
+            entry.touches += 1;
+            let changed_lines = change.diff.lines_touched();
+            entry.lines_touched += changed_lines;
+            entry.recent_points += recent_points;
+            entry.authors.insert(commit.author.email.clone());
+            entry.most_recent_days = entry.most_recent_days.min(age_days);
+
+            let author_key = format!("{} <{}>", commit.author.name, commit.author.email);
+            *entry.author_touches.entry(author_key).or_insert(0) += 1;
+
+            if entry.recent_commits.len() < 8 {
+                entry.recent_commits.push(CommitEvidence {
+                    hash: commit.hash.clone(),
+                    author: commit.author.name.clone(),
+                    committed_at: commit.committed_at.format("%Y-%m-%d").to_string(),
+                    message: commit.message.lines().next().unwrap_or("").to_string(),
+                    lines_touched: changed_lines,
+                });
+            }
+        }
+
+        changed_paths.sort();
+        changed_paths.dedup();
+
+        for path in &changed_paths {
+            if let Some(entry) = by_path.get_mut(path) {
+                for other in &changed_paths {
+                    if other != path {
+                        *entry.co_changes.entry(other.clone()).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut items: Vec<Hotspot> = by_path.into_values().collect();
+    items.sort_by_key(|hotspot| std::cmp::Reverse(hotspot.score()));
+    Ok(items)
+}
+
+impl HotspotSource for Repository {
+    fn hotspots(&self, max_commits: usize) -> Result<Vec<Hotspot>> {
+        build_hotspots(self, max_commits)
     }
 }
 
@@ -558,5 +650,108 @@ mod tests {
                 _ => panic!("Unexpected file: {}", file_name),
             }
         }
+    }
+
+    #[test]
+    fn test_build_hotspots_aggregates_by_path() {
+        let commit1 = make_test_commit("c1", None, "t1", "Alice", "alice@example.com");
+        let commit2 = make_test_commit("c2", Some("c1"), "t2", "Bob", "bob@example.com");
+        let commit3 = make_test_commit("c3", Some("c2"), "t3", "Alice", "alice@example.com");
+
+        let mut objects = HashMap::new();
+        objects.insert(
+            "HEAD_COMMIT".to_string(),
+            GitObject::Commit(commit3.clone()),
+        );
+        objects.insert("c1".to_string(), GitObject::Commit(commit1));
+        objects.insert("c2".to_string(), GitObject::Commit(commit2));
+        objects.insert("c3".to_string(), GitObject::Commit(commit3));
+
+        objects.insert(
+            "t1".to_string(),
+            GitObject::Tree(git_objects::Tree {
+                hash: "t1".to_string(),
+                entries: vec![git_objects::TreeEntry {
+                    name: "foo.txt".to_string(),
+                    hash: "b1".to_string(),
+                    mode: git_objects::EntryMode::Text,
+                }],
+            }),
+        );
+        objects.insert(
+            "t2".to_string(),
+            GitObject::Tree(git_objects::Tree {
+                hash: "t2".to_string(),
+                entries: vec![
+                    git_objects::TreeEntry {
+                        name: "foo.txt".to_string(),
+                        hash: "b2".to_string(),
+                        mode: git_objects::EntryMode::Text,
+                    },
+                    git_objects::TreeEntry {
+                        name: "bar.txt".to_string(),
+                        hash: "b3".to_string(),
+                        mode: git_objects::EntryMode::Text,
+                    },
+                ],
+            }),
+        );
+        objects.insert(
+            "t3".to_string(),
+            GitObject::Tree(git_objects::Tree {
+                hash: "t3".to_string(),
+                entries: vec![
+                    git_objects::TreeEntry {
+                        name: "foo.txt".to_string(),
+                        hash: "b4".to_string(),
+                        mode: git_objects::EntryMode::Text,
+                    },
+                    git_objects::TreeEntry {
+                        name: "bar.txt".to_string(),
+                        hash: "b3".to_string(),
+                        mode: git_objects::EntryMode::Text,
+                    },
+                ],
+            }),
+        );
+
+        objects.insert(
+            "b1".to_string(),
+            GitObject::Blob(Blob {
+                hash: "b1".to_string(),
+                content: Bytes::from("a\n"),
+            }),
+        );
+        objects.insert(
+            "b2".to_string(),
+            GitObject::Blob(Blob {
+                hash: "b2".to_string(),
+                content: Bytes::from("a\nb\n"),
+            }),
+        );
+        objects.insert(
+            "b3".to_string(),
+            GitObject::Blob(Blob {
+                hash: "b3".to_string(),
+                content: Bytes::from("new\n"),
+            }),
+        );
+        objects.insert(
+            "b4".to_string(),
+            GitObject::Blob(Blob {
+                hash: "b4".to_string(),
+                content: Bytes::from("a\nb\nc\n"),
+            }),
+        );
+
+        let repo = MockRepo { objects };
+        let hotspots = build_hotspots(&repo, 300).unwrap();
+
+        let foo = hotspots.iter().find(|h| h.location() == "foo.txt").unwrap();
+        let bar = hotspots.iter().find(|h| h.location() == "bar.txt").unwrap();
+
+        assert_eq!(foo.touches(), 2);
+        assert_eq!(bar.touches(), 1);
+        assert!(foo.lines_touched() > bar.lines_touched());
     }
 }
