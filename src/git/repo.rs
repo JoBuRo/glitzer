@@ -8,7 +8,7 @@ use crate::models::hotspot_source::HotspotSource;
 use bytes::Bytes;
 use chrono::Utc;
 use color_eyre::eyre::eyre;
-use color_eyre::{eyre::WrapErr, Result};
+use color_eyre::{Result, eyre::WrapErr};
 use flate2::read::ZlibDecoder;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
@@ -17,7 +17,7 @@ use std::io::Read;
 use std::path;
 use std::path::Path;
 
-pub trait RepositoryAccess {
+pub(crate) trait GitDataAccess {
     fn get_object(&self, hash: &str) -> Result<GitObject>;
 
     fn get_commits(&self) -> Result<Vec<Commit>>;
@@ -27,27 +27,6 @@ pub trait RepositoryAccess {
     fn get_path(&self) -> &Path;
 
     fn get_file_changes(&self, commit: &Commit) -> Result<Vec<FileChange>>;
-
-    fn get_authors(&self) -> Result<Vec<Author>> {
-        let mut author_map: HashMap<String, Author> = std::collections::HashMap::new();
-        let commits = self.get_commits()?;
-
-        for commit in commits {
-            let key = &commit.author.email;
-
-            if let Some(author) = author_map.get_mut(key) {
-                author.add_commit(commit.clone());
-            } else {
-                let mut author =
-                    Author::new(commit.author.name.clone(), commit.author.email.clone());
-                author.add_commit(commit.clone());
-                author_map.insert(key.clone(), author);
-            }
-        }
-
-        let authors: Vec<Author> = author_map.into_values().collect();
-        Ok(authors)
-    }
 }
 
 pub struct Repository {
@@ -56,7 +35,7 @@ pub struct Repository {
     current_branch: String,
 }
 
-impl RepositoryAccess for Repository {
+impl GitDataAccess for Repository {
     fn get_object(&self, hash: &str) -> Result<GitObject> {
         let file_path = format!("{}/.git/objects/{}/{}", self.path, &hash[0..2], &hash[2..]);
         read_object(&file_path)
@@ -136,10 +115,34 @@ impl Repository {
         };
         Ok(repo)
     }
+
+    pub fn get_authors(&self) -> Result<Vec<Author>> {
+        collect_authors(self)
+    }
+}
+
+fn collect_authors(repo: &impl GitDataAccess) -> Result<Vec<Author>> {
+    let mut author_map: HashMap<String, Author> = std::collections::HashMap::new();
+    let commits = repo.get_commits()?;
+
+    for commit in commits {
+        let key = &commit.author.email;
+
+        if let Some(author) = author_map.get_mut(key) {
+            author.add_commit(commit.clone());
+        } else {
+            let mut author = Author::new(commit.author.name.clone(), commit.author.email.clone());
+            author.add_commit(commit.clone());
+            author_map.insert(key.clone(), author);
+        }
+    }
+
+    let authors: Vec<Author> = author_map.into_values().collect();
+    Ok(authors)
 }
 
 pub(crate) fn build_hotspots(
-    repo: &impl RepositoryAccess,
+    repo: &impl GitDataAccess,
     max_commits: usize,
 ) -> Result<Vec<Hotspot>> {
     let mut by_path: HashMap<String, Hotspot> = HashMap::new();
@@ -363,12 +366,12 @@ mod tests {
         assert!(report.to_string().contains("invalid utf-8"));
     }
 
-    // Shared MockRepo for testing RepositoryAccess implementations
+    // Shared MockRepo for testing GitDataAccess implementations
     struct MockRepo {
         objects: HashMap<String, GitObject>,
     }
 
-    impl RepositoryAccess for MockRepo {
+    impl GitDataAccess for MockRepo {
         fn get_commits(&self) -> Result<Vec<Commit>> {
             // Return commits by traversing from the synthetic HEAD commit.
             let mut commits = Vec::new();
@@ -514,7 +517,7 @@ mod tests {
 
         let repo = MockRepo { objects };
 
-        let authors = repo.get_authors().unwrap();
+        let authors = collect_authors(&repo).unwrap();
 
         // Should have 3 unique authors
         assert_eq!(authors.len(), 3);

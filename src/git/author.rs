@@ -1,10 +1,12 @@
+#[cfg(test)]
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::git::{
-    file_tree::{FileChange, FileTree},
-    git_objects::Commit,
-    repo::RepositoryAccess,
-};
+#[cfg(test)]
+use crate::git::file_tree::{FileChange, FileTree};
+use crate::git::git_objects::Commit;
+#[cfg(test)]
+use crate::git::repo::GitDataAccess;
+#[cfg(test)]
 use color_eyre::eyre::Result;
 
 #[derive(Debug)]
@@ -35,7 +37,8 @@ impl Author {
         self.commits.len()
     }
 
-    pub fn get_changed_files(&self, repo: &impl RepositoryAccess) -> Result<Vec<PathBuf>> {
+    #[cfg(test)]
+    pub(crate) fn get_changed_files(&self, repo: &impl GitDataAccess) -> Result<Vec<PathBuf>> {
         let mut change_map: HashMap<PathBuf, u64> = HashMap::new();
         for commit in &self.commits {
             let tree = FileTree::from_commit(commit, repo)?;
@@ -53,6 +56,7 @@ impl Author {
     }
 }
 
+#[cfg(test)]
 fn aggregate_changes(change_map: &mut HashMap<PathBuf, u64>, changes: Vec<FileChange>) {
     for change in changes {
         let lines_touched_old = change_map.get(&change.location).unwrap_or(&0);
@@ -80,7 +84,7 @@ mod tests {
         objects: HashMap<String, GitObject>,
     }
 
-    impl RepositoryAccess for MockRepo {
+    impl GitDataAccess for MockRepo {
         // Not used by these tests
         fn get_commits(&self) -> Result<Vec<Commit>> {
             Ok(vec![])

@@ -4,7 +4,7 @@ use bytes::Bytes;
 use color_eyre::{Result, eyre::eyre};
 use std::path::{Path, PathBuf};
 
-use super::repo::RepositoryAccess;
+use super::repo::GitDataAccess;
 
 use super::diff::{Diff, diff};
 use super::git_objects::{Commit, EntryMode, GitObject, TreeEntry};
@@ -184,7 +184,7 @@ impl FileTree {
         }
     }
 
-    pub fn from_commit(commit: &Commit, repo: &impl RepositoryAccess) -> Result<Self> {
+    pub fn from_commit(commit: &Commit, repo: &impl GitDataAccess) -> Result<Self> {
         let tree_object = repo.get_object(&commit.tree)?;
 
         if let GitObject::Tree(tree) = tree_object {
@@ -211,7 +211,7 @@ impl FileTree {
         ))
     }
 
-    fn from_entry(entry: &TreeEntry, repo: &impl RepositoryAccess) -> Result<Self> {
+    fn from_entry(entry: &TreeEntry, repo: &impl GitDataAccess) -> Result<Self> {
         match repo.get_object(&entry.hash)? {
             GitObject::Blob(blob) => match std::str::from_utf8(&blob.content) {
                 Ok(content_str) => Ok(FileTree::Leaf(LeafFile::Source(SourceFile {
@@ -263,7 +263,7 @@ mod tests {
         objects: HashMap<String, GitObject>,
     }
 
-    impl RepositoryAccess for MockRepo {
+    impl GitDataAccess for MockRepo {
         fn get_file_changes(&self, _commit: &Commit) -> Result<Vec<FileChange>> {
             Ok(vec![])
         }

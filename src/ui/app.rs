@@ -5,7 +5,7 @@ use crossterm::event;
 use ratatui::Frame;
 
 use crate::models::hotspot_source::HotspotSource;
-use crate::ui::view::{main_view::MainView, View};
+use crate::ui::view::{View, main_view::MainView};
 
 pub struct App {
     current_view: Box<dyn View>,
