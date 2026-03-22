@@ -1,6 +1,6 @@
 use clap::Parser;
 use color_eyre::Result;
-use glitzer::git::repo::Repository;
+use glitzer::git::gix_repo::GixRepository;
 use glitzer::ui::app::App;
 
 #[derive(Parser, Debug)]
@@ -14,7 +14,7 @@ fn main() -> Result<()> {
     color_eyre::install()?;
     let args = Cli::parse();
 
-    let repo = Repository::new(args.repo)?;
+    let repo = GixRepository::new(args.repo)?;
 
     let mut app = App::new(repo)?;
     Ok(ratatui::run(|terminal| app.run(terminal))?)

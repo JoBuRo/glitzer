@@ -10,6 +10,7 @@ clap = { version = "4.5.50", features = ["derive"] }
 color-eyre = "0.6.5"
 crossterm = "0.29.0"
 flate2 = "1.1.5"
+gix = "0.81.0"
 hex = "0.4.3"
 nom = "8.0.0"
 ratatui = "0.30.0"
