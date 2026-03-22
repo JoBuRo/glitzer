@@ -4,7 +4,6 @@ use super::super::widgets::hotspots::Hotspots;
 use super::View;
 use crate::models::hotspot_source::HotspotSource;
 use color_eyre::eyre::Result;
-use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     prelude::*,
@@ -36,20 +35,47 @@ impl MainView {
         })
     }
 
-    fn switch_tab_left(&mut self) {
+    pub fn switch_tab_left(&mut self) {
         self.active_tab = self.active_tab.switch_left();
         self.evidence.set_active_tab(self.active_tab);
     }
 
-    fn switch_tab_right(&mut self) {
+    pub fn switch_tab_right(&mut self) {
         self.active_tab = self.active_tab.switch_right();
         self.evidence.set_active_tab(self.active_tab);
+    }
+
+    pub fn switch_selection_down(&mut self) {
+        if !self.hotspots.is_empty() {
+            self.selected_hotspot_index =
+                (self.selected_hotspot_index + 1).min(self.hotspots.len().saturating_sub(1));
+            self.hotspots
+                .set_selected_index(self.selected_hotspot_index);
+            self.refresh_selection_widgets();
+        }
+    }
+
+    pub fn switch_selection_up(&mut self) {
+        self.selected_hotspot_index = self.selected_hotspot_index.saturating_sub(1);
+        self.hotspots
+            .set_selected_index(self.selected_hotspot_index);
+        self.refresh_selection_widgets();
     }
 
     fn refresh_selection_widgets(&mut self) {
         self.hotspot_detail = HotspotDetailWidget::from_hotspot(self.hotspots.selected_hotspot());
         self.evidence
             .set_selected_hotspot(self.hotspots.selected_hotspot());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn selected_hotspot_index(&self) -> usize {
+        self.selected_hotspot_index
+    }
+
+    #[cfg(test)]
+    pub(crate) fn active_tab(&self) -> EvidenceTab {
+        self.active_tab
     }
 }
 
@@ -86,31 +112,5 @@ impl View for MainView {
         frame.render_widget(&self.hotspots, top_layout[0]);
         frame.render_widget(&self.hotspot_detail, top_layout[1]);
         frame.render_widget(&self.evidence, outer_layout[1]);
-    }
-
-    fn handle_input(&mut self, input: KeyEvent) {
-        match input.code {
-            KeyCode::Char('q') => {
-                std::process::exit(0);
-            }
-            KeyCode::Char('j') => {
-                if !self.hotspots.is_empty() {
-                    self.selected_hotspot_index = (self.selected_hotspot_index + 1)
-                        .min(self.hotspots.len().saturating_sub(1));
-                    self.hotspots
-                        .set_selected_index(self.selected_hotspot_index);
-                    self.refresh_selection_widgets();
-                }
-            }
-            KeyCode::Char('k') => {
-                self.selected_hotspot_index = self.selected_hotspot_index.saturating_sub(1);
-                self.hotspots
-                    .set_selected_index(self.selected_hotspot_index);
-                self.refresh_selection_widgets();
-            }
-            KeyCode::Char('h') => self.switch_tab_left(),
-            KeyCode::Char('l') => self.switch_tab_right(),
-            _ => {}
-        }
     }
 }

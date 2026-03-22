@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Hotspot {
     pub(crate) location: String,
     pub(crate) touches: u64,
@@ -13,7 +13,7 @@ pub struct Hotspot {
     pub(crate) author_touches: HashMap<String, u64>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct CommitEvidence {
     pub(crate) hash: String,
     pub(crate) author: String,
