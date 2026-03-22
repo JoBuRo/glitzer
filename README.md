@@ -64,6 +64,7 @@ Glitzer is currently Git-history-driven. It does not yet include static complexi
 ## Contributing
 
 Issues and pull requests are welcome.
+See the contribution guide in `docs/CONTRIBUTING.md`.
 
 ---
 
