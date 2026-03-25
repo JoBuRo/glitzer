@@ -2,10 +2,10 @@
 use std::{collections::HashMap, path::PathBuf};
 
 #[cfg(test)]
-use crate::git::file_tree::TreeAccess;
-#[cfg(test)]
-use crate::git::file_tree::{FileChange, FileTree};
+use crate::git::file_tree::{FileTree, TreeAccess};
 use crate::git::git_objects::Commit;
+#[cfg(test)]
+use crate::models::file_change::FileChange;
 #[cfg(test)]
 use color_eyre::eyre::Result;
 

@@ -2,10 +2,11 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use color_eyre::{Result, eyre::eyre};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use super::diff::{Diff, diff};
+use super::diff::diff;
 use super::git_objects::{Commit, EntryMode, GitObject, TreeEntry};
+use crate::models::file_change::{Diff, FileChange, FileChangeType};
 
 pub(crate) trait TreeAccess {
     fn get_object(&self, hash: &str) -> Result<GitObject>;
@@ -17,19 +18,6 @@ pub struct FileInfo {
     name: String,
     hash: String,
     _mode: EntryMode,
-}
-
-#[derive(Clone)]
-pub enum FileChangeType {
-    Added,
-    Removed,
-    Modified,
-}
-
-pub struct FileChange {
-    pub location: PathBuf,
-    pub _change_type: FileChangeType,
-    pub diff: Diff,
 }
 
 pub struct Directory {
@@ -261,6 +249,7 @@ mod tests {
     use crate::git::git_objects::{Author, Blob, Tree};
 
     use super::*;
+    use std::path::PathBuf;
 
     struct MockRepo {
         objects: HashMap<String, GitObject>,

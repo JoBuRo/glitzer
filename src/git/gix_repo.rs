@@ -8,9 +8,10 @@ use gix::{Repository as Gix, discover};
 use crate::models::hotspot::Hotspot;
 use crate::models::hotspot_source::HotspotSource;
 
-use super::file_tree::{FileChange, FileTree, TreeAccess};
+use super::file_tree::{FileTree, TreeAccess};
 use super::git_objects::{Blob, Commit, GitObject};
 use super::parser::{parse_commit, parse_tree};
+use crate::models::file_change::FileChange;
 
 pub struct GixRepository {
     repo: Gix,
