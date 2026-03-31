@@ -16,3 +16,6 @@ nom = "8.0.0"
 ratatui = "0.30.0"
 sha1 = "0.10.6"
 similar = "2.7.0"
+
+[dev-dependencies]
+mockall = "0.14.0"

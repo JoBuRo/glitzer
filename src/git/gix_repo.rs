@@ -302,3 +302,153 @@ impl fmt::Debug for GixRepository {
         write!(f, "GixRepository at {}", self.path.display())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mockall::mock;
+    use std::collections::VecDeque;
+
+    mock! {
+        CommitLike {}
+        impl super::CommitLike for CommitLike {
+            fn metadata(&self) -> Result<super::CommitMetadata>;
+        }
+    }
+
+    #[derive(Debug)]
+    struct FakeCommit;
+
+    mock! {
+        DeltaProvider {}
+        impl super::DeltaProvider<FakeCommit> for DeltaProvider {
+            fn delta_changes(&self, commit: &FakeCommit) -> Result<Vec<super::FileDiffChange>>;
+        }
+    }
+
+    fn commit_metadata(short_id: &str, author: &str, email: &str) -> CommitMetadata {
+        CommitMetadata {
+            short_id: short_id.to_string(),
+            author_name: author.to_string(),
+            author_email: email.to_string(),
+            authored_time_seconds: chrono::Utc::now().timestamp(),
+            committed_at: "1234 +0000".to_string(),
+            message_title: format!("msg-{}", short_id),
+        }
+    }
+
+    #[test]
+    fn get_hotspot_deltas_filters_tree_entries_and_joins_repo_path() {
+        let repo_path = Path::new("/repo");
+        let commit = FakeCommit;
+        let mut provider = MockDeltaProvider::new();
+
+        provider.expect_delta_changes().times(1).return_once(|_| {
+            Ok(vec![
+                FileDiffChange {
+                    location: PathBuf::from("src/main.rs"),
+                    is_tree: false,
+                    lines_added: 5,
+                    lines_removed: 2,
+                },
+                FileDiffChange {
+                    location: PathBuf::from("src"),
+                    is_tree: true,
+                    lines_added: 0,
+                    lines_removed: 0,
+                },
+            ])
+        });
+
+        let deltas = get_hotspot_deltas_for_commit(repo_path, &provider, &commit)
+            .expect("build hotspot deltas from provider");
+
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0].location, PathBuf::from("/repo/src/main.rs"));
+        assert_eq!(deltas[0].lines_added, 5);
+        assert_eq!(deltas[0].lines_removed, 2);
+    }
+
+    #[test]
+    fn build_hotspots_from_commits_aggregates_multiple_mock_commits() {
+        let mut newest = MockCommitLike::new();
+        newest
+            .expect_metadata()
+            .times(1)
+            .return_once(|| Ok(commit_metadata("aaa1111", "Alice", "alice@example.com")));
+
+        let mut older = MockCommitLike::new();
+        older
+            .expect_metadata()
+            .times(1)
+            .return_once(|| Ok(commit_metadata("bbb2222", "Alice", "alice@example.com")));
+
+        let commits = vec![newest, older];
+        let mut queued_deltas = VecDeque::from([
+            vec![HotspotDelta {
+                location: PathBuf::from("/repo/src/main.rs"),
+                lines_added: 3,
+                lines_removed: 0,
+            }],
+            vec![HotspotDelta {
+                location: PathBuf::from("/repo/src/main.rs"),
+                lines_added: 1,
+                lines_removed: 1,
+            }],
+        ]);
+
+        let hotspots = build_hotspots_from_commits(&commits, Path::new("/repo"), 100, |_| {
+            Ok(queued_deltas
+                .pop_front()
+                .expect("queued deltas for each commit"))
+        })
+        .expect("build hotspots from mock commits");
+
+        assert_eq!(hotspots.len(), 1);
+        let hotspot = &hotspots[0];
+        assert_eq!(hotspot.location, "src/main.rs");
+        assert_eq!(hotspot.touches, 2);
+        assert_eq!(hotspot.lines_touched, 4);
+        assert_eq!(hotspot.author_count(), 1);
+        assert_eq!(hotspot.recent_commits.len(), 2);
+    }
+
+    #[test]
+    fn build_hotspots_from_commits_records_co_change_links() {
+        let mut commit = MockCommitLike::new();
+        commit
+            .expect_metadata()
+            .times(1)
+            .return_once(|| Ok(commit_metadata("ccc3333", "Bob", "bob@example.com")));
+
+        let hotspots = build_hotspots_from_commits(&[commit], Path::new("/repo"), 100, |_| {
+            Ok(vec![
+                HotspotDelta {
+                    location: PathBuf::from("/repo/src/main.rs"),
+                    lines_added: 2,
+                    lines_removed: 0,
+                },
+                HotspotDelta {
+                    location: PathBuf::from("/repo/src/lib.rs"),
+                    lines_added: 4,
+                    lines_removed: 0,
+                },
+            ])
+        })
+        .expect("build hotspots with co-change data");
+
+        assert_eq!(hotspots.len(), 2);
+
+        let main = hotspots
+            .iter()
+            .find(|h| h.location == "src/main.rs")
+            .expect("hotspot for src/main.rs");
+        assert_eq!(main.co_changes.get("src/lib.rs"), Some(&1));
+
+        let lib = hotspots
+            .iter()
+            .find(|h| h.location == "src/lib.rs")
+            .expect("hotspot for src/lib.rs");
+        assert_eq!(lib.co_changes.get("src/main.rs"), Some(&1));
+    }
+}
