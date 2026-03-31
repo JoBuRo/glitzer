@@ -1690,6 +1690,7 @@ dependencies = [
  "ratatui",
  "sha1",
  "similar",
+ "tempfile",
 ]
 
 [[package]]
