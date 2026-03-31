@@ -153,3 +153,49 @@ fn packed_objects_are_read() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn merge_history_uses_first_parent_traversal() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(repo.path(), "README.md", "base\n")?;
+    commit_at(repo.path(), "initial", "2025-01-01T00:00:00Z")?;
+
+    git(repo.path(), &["checkout", "-b", "feature"])?;
+    write_file(
+        repo.path(),
+        "src/feature.rs",
+        "pub fn feature() -> u8 {\n    1\n}\n",
+    )?;
+    commit_at(repo.path(), "feature step 1", "2025-01-02T00:00:00Z")?;
+
+    write_file(
+        repo.path(),
+        "src/feature.rs",
+        "pub fn feature() -> u8 {\n    2\n}\n",
+    )?;
+    commit_at(repo.path(), "feature step 2", "2025-01-03T00:00:00Z")?;
+
+    git(repo.path(), &["checkout", "main"])?;
+    write_file(repo.path(), "src/main.rs", "pub fn mainline() {}\n")?;
+    commit_at(repo.path(), "mainline change", "2025-01-04T00:00:00Z")?;
+
+    git(
+        repo.path(),
+        &["merge", "--no-ff", "feature", "-m", "merge feature"],
+    )?;
+
+    let hotspots = analyze(repo.path())?;
+    let feature_hotspot = hotspots
+        .iter()
+        .find(|hotspot| hotspot.location() == "src/feature.rs")
+        .ok_or_else(|| eyre!("expected hotspot for src/feature.rs"))?;
+
+    assert_eq!(
+        feature_hotspot.touches(),
+        1,
+        "first-parent traversal should attribute feature file through the merge commit only"
+    );
+
+    Ok(())
+}

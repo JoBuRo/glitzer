@@ -58,6 +58,7 @@ Run Glitzer for a specific repository path:
 ## Current Scope
 
 Glitzer is currently Git-history-driven. It does not yet include static complexity analysis or configurable time windows in the UI.
+Merge history traversal currently follows a first-parent policy for deterministic hotspot attribution on mainline history.
 
 ---
 

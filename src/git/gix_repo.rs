@@ -8,6 +8,13 @@ use gix::{Commit, Id, ObjectId, Repository as Gix, discover};
 use crate::models::hotspot::Hotspot;
 use crate::models::hotspot_source::HotspotSource;
 
+#[derive(Debug, Copy, Clone)]
+enum TraversalPolicy {
+    FirstParent,
+}
+
+const TRAVERSAL_POLICY: TraversalPolicy = TraversalPolicy::FirstParent;
+
 #[derive(Debug, Clone)]
 struct HotspotDelta {
     location: PathBuf,
@@ -190,13 +197,19 @@ fn get_hotspot_deltas_for_commit<C>(
 }
 
 impl GixRepository {
+    fn selected_parent_id(commit: &Commit<'_>) -> Option<ObjectId> {
+        match TRAVERSAL_POLICY {
+            TraversalPolicy::FirstParent => commit.parent_ids().next().map(Into::into),
+        }
+    }
+
     fn get_commits(&self) -> Result<Vec<Commit<'_>>> {
         let mut commits = Vec::new();
-        let mut commit_id_opt = Some(self.head_hash()?);
+        let mut commit_id_opt: Option<ObjectId> = Some(self.head_hash()?.into());
 
         while let Some(commit_id) = commit_id_opt {
             let commit = self.repo.find_commit(commit_id)?;
-            commit_id_opt = commit.parent_ids().next();
+            commit_id_opt = Self::selected_parent_id(&commit);
             commits.push(commit);
         }
 
@@ -219,8 +232,8 @@ impl GixRepository {
 impl DeltaProvider<Commit<'_>> for GixRepository {
     fn delta_changes(&self, commit: &Commit<'_>) -> Result<Vec<FileDiffChange>> {
         let new_tree = self.tree_for_commit_hash(commit.id)?;
-        let old_tree = match commit.parent_ids().next() {
-            Some(parent_hash) => Some(self.tree_for_commit_hash(parent_hash.into())?),
+        let old_tree = match GixRepository::selected_parent_id(commit) {
+            Some(parent_hash) => Some(self.tree_for_commit_hash(parent_hash)?),
             None => None,
         };
 

@@ -17,7 +17,7 @@ pub struct Author {
 #[derive(Clone)]
 pub struct Commit {
     pub hash: String,
-    pub parent: Option<String>,
+    pub parents: Vec<String>,
     pub tree: String,
     pub message: String,
     pub author: Author,
@@ -28,12 +28,16 @@ pub struct Commit {
 
 impl fmt::Debug for Commit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let parent = self.parent.as_deref().unwrap_or("None");
+        let parents = if self.parents.is_empty() {
+            "None".to_string()
+        } else {
+            self.parents.join(", ")
+        };
         write!(
             f,
-            "Commit {}:\n  Parent: {}\n  Tree: {}\n  Author: {} <{}>\n  Date: {}\n  Message: {}\n",
+            "Commit {}:\n  Parents: {}\n  Tree: {}\n  Author: {} <{}>\n  Date: {}\n  Message: {}\n",
             &self.hash,
-            parent,
+            parents,
             self.tree,
             self.author.name,
             self.author.email,
