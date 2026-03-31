@@ -3,15 +3,27 @@ use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
 use color_eyre::eyre::{Result, eyre};
+use gix::prelude::TreeDiffChangeExt;
 use gix::{Repository as Gix, discover};
 
 use crate::models::hotspot::Hotspot;
 use crate::models::hotspot_source::HotspotSource;
 
-use super::file_tree::{FileTree, TreeAccess};
 use super::git_objects::{Blob, Commit, GitObject};
 use super::parser::{parse_commit, parse_tree};
-use crate::models::file_change::FileChange;
+
+#[derive(Debug, Clone)]
+struct HotspotDelta {
+    location: PathBuf,
+    lines_added: u64,
+    lines_removed: u64,
+}
+
+impl HotspotDelta {
+    fn lines_touched(&self) -> u64 {
+        std::cmp::max(self.lines_added, self.lines_removed)
+    }
+}
 
 pub struct GixRepository {
     repo: Gix,
@@ -66,7 +78,7 @@ fn build_hotspots_from_commits(
     commits: &[Commit],
     repo_path: &Path,
     max_commits: usize,
-    mut get_file_changes: impl FnMut(&Commit) -> Result<Vec<FileChange>>,
+    mut get_hotspot_deltas: impl FnMut(&Commit) -> Result<Vec<HotspotDelta>>,
 ) -> Result<Vec<Hotspot>> {
     let mut by_path: std::collections::HashMap<String, Hotspot> = std::collections::HashMap::new();
     let now = chrono::Utc::now();
@@ -82,14 +94,14 @@ fn build_hotspots_from_commits(
             _ => 1,
         };
 
-        let changes = get_file_changes(commit)?;
+        let changes = get_hotspot_deltas(commit)?;
         let mut changed_paths = Vec::new();
 
-        for change in changes {
-            let location = if let Ok(relative) = change.location.strip_prefix(repo_path) {
+        for delta in changes {
+            let location = if let Ok(relative) = delta.location.strip_prefix(repo_path) {
                 relative.to_string_lossy().to_string()
             } else {
-                change.location.to_string_lossy().to_string()
+                delta.location.to_string_lossy().to_string()
             };
 
             changed_paths.push(location.clone());
@@ -107,7 +119,7 @@ fn build_hotspots_from_commits(
             });
 
             entry.touches += 1;
-            let changed_lines = change.diff.lines_touched();
+            let changed_lines = delta.lines_touched();
             entry.lines_touched += changed_lines;
             entry.recent_points += recent_points;
             entry.authors.insert(commit.author.email.clone());
@@ -174,34 +186,82 @@ impl GixRepository {
         collect_commits_from_head(self.head_hash()?, |hash| self.get_object(hash))
     }
 
-    fn get_commit(&self, hash: &str) -> Result<Commit> {
-        if let GitObject::Commit(commit) = self.get_object(hash)? {
-            return Ok(commit);
-        }
-        Err(eyre!("Expected commit at {}", hash))
-    }
-
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }
 
-    fn get_file_changes(&self, commit: &Commit) -> Result<Vec<FileChange>> {
-        let parent_tree: Option<FileTree> = match &commit.parent {
-            Some(parent_hash) => Some(FileTree::from_commit(&self.get_commit(parent_hash)?, self)?),
+    fn tree_for_commit_hash(&self, hash: &str) -> Result<gix::Tree<'_>> {
+        let object_id = gix::hash::ObjectId::from_hex(hash.as_bytes())
+            .map_err(|err| eyre!("Invalid object id '{}': {err}", hash))?;
+        Ok(self.repo.find_commit(object_id)?.tree()?)
+    }
+
+    fn get_hotspot_deltas(&self, commit: &Commit) -> Result<Vec<HotspotDelta>> {
+        let new_tree = self.tree_for_commit_hash(&commit.hash)?;
+        let old_tree = match commit.parent.as_deref() {
+            Some(parent_hash) => Some(self.tree_for_commit_hash(parent_hash)?),
             None => None,
         };
-        let tree = FileTree::from_commit(commit, self)?;
-        Ok(tree.file_changes(parent_tree.as_ref(), self.get_path()))
-    }
-}
 
-impl TreeAccess for GixRepository {
-    fn get_object(&self, hash: &str) -> Result<GitObject> {
-        GixRepository::get_object(self, hash)
-    }
+        let mut diff_opts = gix::diff::Options::default();
+        diff_opts.track_path().track_rewrites(None);
 
-    fn get_path(&self) -> &Path {
-        GixRepository::get_path(self)
+        let changes =
+            self.repo
+                .diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(diff_opts))?;
+
+        let mut resource_cache = self.repo.diff_resource_cache_for_tree_diff()?;
+        let mut deltas = Vec::new();
+
+        for change in changes {
+            let attached = change.attach(&self.repo, &self.repo);
+
+            let location = match &change {
+                gix::object::tree::diff::ChangeDetached::Addition {
+                    entry_mode,
+                    location,
+                    ..
+                }
+                | gix::object::tree::diff::ChangeDetached::Deletion {
+                    entry_mode,
+                    location,
+                    ..
+                }
+                | gix::object::tree::diff::ChangeDetached::Modification {
+                    entry_mode,
+                    location,
+                    ..
+                }
+                | gix::object::tree::diff::ChangeDetached::Rewrite {
+                    entry_mode,
+                    location,
+                    ..
+                } => {
+                    if entry_mode.is_tree() {
+                        resource_cache.clear_resource_cache_keep_allocation();
+                        continue;
+                    }
+
+                    PathBuf::from(String::from_utf8_lossy(location.as_ref()).into_owned())
+                }
+            };
+
+            let line_counts = attached.diff(&mut resource_cache)?.line_counts()?;
+            let (lines_added, lines_removed) = match line_counts {
+                Some(counts) => (u64::from(counts.insertions), u64::from(counts.removals)),
+                None => (0, 0),
+            };
+
+            deltas.push(HotspotDelta {
+                location: self.get_path().join(location),
+                lines_added,
+                lines_removed,
+            });
+
+            resource_cache.clear_resource_cache_keep_allocation();
+        }
+
+        Ok(deltas)
     }
 }
 
@@ -209,7 +269,7 @@ impl HotspotSource for GixRepository {
     fn hotspots(&self, max_commits: usize) -> Result<Vec<Hotspot>> {
         let commits = self.get_commits()?;
         build_hotspots_from_commits(&commits, self.get_path(), max_commits, |commit| {
-            self.get_file_changes(commit)
+            self.get_hotspot_deltas(commit)
         })
     }
 }
@@ -226,6 +286,7 @@ mod tests {
     use crate::git::git_objects::{Author, Blob};
     use chrono::Utc;
     use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn collect_commits_from_head_follows_parent_chain() {
@@ -312,5 +373,62 @@ mod tests {
                 .to_string()
                 .contains("Expected commit object")
         );
+    }
+
+    #[test]
+    fn build_hotspots_counts_root_commit_additions() {
+        let author = Author {
+            name: "Test".to_string(),
+            email: "test@example.com".to_string(),
+        };
+
+        let root = Commit {
+            hash: "root".to_string(),
+            parent: None,
+            tree: "tree-root".to_string(),
+            message: "root".to_string(),
+            author: author.clone(),
+            authored_at: Utc::now(),
+            _committer: author.clone(),
+            committed_at: Utc::now(),
+        };
+
+        let child = Commit {
+            hash: "child".to_string(),
+            parent: Some("root".to_string()),
+            tree: "tree-child".to_string(),
+            message: "child".to_string(),
+            author: author.clone(),
+            authored_at: Utc::now(),
+            _committer: author,
+            committed_at: Utc::now(),
+        };
+
+        let commits = vec![child, root];
+        let repo_path = Path::new("/repo");
+
+        let hotspots = build_hotspots_from_commits(&commits, repo_path, 100, |commit| {
+            let delta = match commit.hash.as_str() {
+                "root" => HotspotDelta {
+                    location: PathBuf::from("/repo/src/main.rs"),
+                    lines_added: 3,
+                    lines_removed: 0,
+                },
+                "child" => HotspotDelta {
+                    location: PathBuf::from("/repo/src/main.rs"),
+                    lines_added: 1,
+                    lines_removed: 1,
+                },
+                _ => unreachable!(),
+            };
+
+            Ok(vec![delta])
+        })
+        .unwrap();
+
+        assert_eq!(hotspots.len(), 1);
+        assert_eq!(hotspots[0].location, "src/main.rs");
+        assert_eq!(hotspots[0].touches, 2);
+        assert_eq!(hotspots[0].lines_touched, 4);
     }
 }
