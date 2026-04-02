@@ -68,6 +68,123 @@ impl HotspotDelta {
     }
 }
 
+fn recent_points_for_age(age_days: i64) -> u64 {
+    match age_days {
+        0..=7 => 3,
+        8..=30 => 2,
+        _ => 1,
+    }
+}
+
+fn normalize_location(repo_path: &Path, location: &Path) -> String {
+    if let Ok(relative) = location.strip_prefix(repo_path) {
+        relative.to_string_lossy().to_string()
+    } else {
+        location.to_string_lossy().to_string()
+    }
+}
+
+fn get_or_create_hotspot(
+    by_path: &mut std::collections::HashMap<String, Hotspot>,
+    location: String,
+    age_days: i64,
+) -> &mut Hotspot {
+    by_path.entry(location.clone()).or_insert_with(|| Hotspot {
+        location,
+        touches: 0,
+        lines_touched: 0,
+        recent_points: 0,
+        authors: std::collections::HashSet::new(),
+        most_recent_days: age_days,
+        recent_commits: Vec::new(),
+        co_changes: std::collections::HashMap::new(),
+        author_touches: std::collections::HashMap::new(),
+    })
+}
+
+fn apply_delta_to_hotspot(
+    entry: &mut Hotspot,
+    delta: &HotspotDelta,
+    commit_metadata: &CommitMetadata,
+    age_days: i64,
+    recent_points: u64,
+) {
+    entry.touches += 1;
+    let changed_lines = delta.lines_touched();
+    entry.lines_touched += changed_lines;
+    entry.recent_points += recent_points;
+    entry.authors.insert(commit_metadata.author_email.clone());
+    entry.most_recent_days = entry.most_recent_days.min(age_days);
+
+    let author_key = format!(
+        "{} <{}>",
+        commit_metadata.author_name, commit_metadata.author_email
+    );
+    *entry.author_touches.entry(author_key).or_insert(0) += 1;
+
+    if entry.recent_commits.len() < 8 {
+        entry
+            .recent_commits
+            .push(crate::models::hotspot::CommitEvidence {
+                hash: commit_metadata.short_id.clone(),
+                author: commit_metadata.author_name.clone(),
+                committed_at: commit_metadata.committed_at.clone(),
+                message: commit_metadata.message_title.clone(),
+                lines_touched: changed_lines,
+            });
+    }
+}
+
+fn record_co_changes(
+    by_path: &mut std::collections::HashMap<String, Hotspot>,
+    changed_paths: &[String],
+) {
+    for path in changed_paths {
+        if let Some(entry) = by_path.get_mut(path) {
+            for other in changed_paths {
+                if other != path {
+                    *entry.co_changes.entry(other.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+}
+
+fn parse_change_location(change: &gix::object::tree::diff::ChangeDetached) -> (bool, PathBuf) {
+    match change {
+        gix::object::tree::diff::ChangeDetached::Addition {
+            entry_mode,
+            location,
+            ..
+        }
+        | gix::object::tree::diff::ChangeDetached::Deletion {
+            entry_mode,
+            location,
+            ..
+        }
+        | gix::object::tree::diff::ChangeDetached::Modification {
+            entry_mode,
+            location,
+            ..
+        }
+        | gix::object::tree::diff::ChangeDetached::Rewrite {
+            entry_mode,
+            location,
+            ..
+        } => (
+            entry_mode.is_tree(),
+            PathBuf::from(String::from_utf8_lossy(location.as_ref()).into_owned()),
+        ),
+    }
+}
+
+fn line_counts_to_u64(line_counts: Option<(u32, u32)>) -> (u64, u64) {
+    match line_counts {
+        Some((insertions, removals)) => (u64::from(insertions), u64::from(removals)),
+        None => (0, 0),
+    }
+}
+
 pub struct GixRepository {
     repo: Gix,
     path: PathBuf,
@@ -104,74 +221,24 @@ fn build_hotspots_from_commits<C: CommitLike>(
     for commit in commits.iter().take(max_commits) {
         let commit_metadata = commit.metadata()?;
         let age_days = ((now.timestamp() - commit_metadata.authored_time_seconds).max(0)) / 86_400;
-        let recent_points = match age_days {
-            0..=7 => 3,
-            8..=30 => 2,
-            _ => 1,
-        };
+        let recent_points = recent_points_for_age(age_days);
 
         let changes = get_hotspot_deltas(commit)?;
         let mut changed_paths = Vec::new();
 
         for delta in changes {
-            let location = if let Ok(relative) = delta.location.strip_prefix(repo_path) {
-                relative.to_string_lossy().to_string()
-            } else {
-                delta.location.to_string_lossy().to_string()
-            };
+            let location = normalize_location(repo_path, &delta.location);
 
             changed_paths.push(location.clone());
 
-            let entry = by_path.entry(location.clone()).or_insert_with(|| Hotspot {
-                location,
-                touches: 0,
-                lines_touched: 0,
-                recent_points: 0,
-                authors: std::collections::HashSet::new(),
-                most_recent_days: age_days,
-                recent_commits: Vec::new(),
-                co_changes: std::collections::HashMap::new(),
-                author_touches: std::collections::HashMap::new(),
-            });
-
-            entry.touches += 1;
-            let changed_lines = delta.lines_touched();
-            entry.lines_touched += changed_lines;
-            entry.recent_points += recent_points;
-            entry.authors.insert(commit_metadata.author_email.clone());
-            entry.most_recent_days = entry.most_recent_days.min(age_days);
-
-            let author_key = format!(
-                "{} <{}>",
-                commit_metadata.author_name, commit_metadata.author_email
-            );
-            *entry.author_touches.entry(author_key).or_insert(0) += 1;
-
-            if entry.recent_commits.len() < 8 {
-                entry
-                    .recent_commits
-                    .push(crate::models::hotspot::CommitEvidence {
-                        hash: commit_metadata.short_id.clone(),
-                        author: commit_metadata.author_name.clone(),
-                        committed_at: commit_metadata.committed_at.clone(),
-                        message: commit_metadata.message_title.clone(),
-                        lines_touched: changed_lines,
-                    });
-            }
+            let entry = get_or_create_hotspot(&mut by_path, location, age_days);
+            apply_delta_to_hotspot(entry, &delta, &commit_metadata, age_days, recent_points);
         }
 
         changed_paths.sort();
         changed_paths.dedup();
 
-        for path in &changed_paths {
-            if let Some(entry) = by_path.get_mut(path) {
-                for other in &changed_paths {
-                    if other != path {
-                        *entry.co_changes.entry(other.clone()).or_insert(0) += 1;
-                    }
-                }
-            }
-        }
+        record_co_changes(&mut by_path, &changed_paths);
     }
 
     let mut items: Vec<Hotspot> = by_path.into_values().collect();
@@ -250,31 +317,7 @@ impl DeltaProvider<Commit<'_>> for GixRepository {
         for change in changes {
             let attached = change.attach(&self.repo, &self.repo);
 
-            let (is_tree, location) = match &change {
-                gix::object::tree::diff::ChangeDetached::Addition {
-                    entry_mode,
-                    location,
-                    ..
-                }
-                | gix::object::tree::diff::ChangeDetached::Deletion {
-                    entry_mode,
-                    location,
-                    ..
-                }
-                | gix::object::tree::diff::ChangeDetached::Modification {
-                    entry_mode,
-                    location,
-                    ..
-                }
-                | gix::object::tree::diff::ChangeDetached::Rewrite {
-                    entry_mode,
-                    location,
-                    ..
-                } => (
-                    entry_mode.is_tree(),
-                    PathBuf::from(String::from_utf8_lossy(location.as_ref()).into_owned()),
-                ),
-            };
+            let (is_tree, location) = parse_change_location(&change);
 
             if is_tree {
                 resource_cache.clear_resource_cache_keep_allocation();
@@ -282,10 +325,8 @@ impl DeltaProvider<Commit<'_>> for GixRepository {
             }
 
             let line_counts = attached.diff(&mut resource_cache)?.line_counts()?;
-            let (lines_added, lines_removed) = match line_counts {
-                Some(counts) => (u64::from(counts.insertions), u64::from(counts.removals)),
-                None => (0, 0),
-            };
+            let (lines_added, lines_removed) =
+                line_counts_to_u64(line_counts.map(|counts| (counts.insertions, counts.removals)));
 
             changes_for_commit.push(FileDiffChange {
                 location,
@@ -463,5 +504,37 @@ mod tests {
             .find(|h| h.location == "src/lib.rs")
             .expect("hotspot for src/lib.rs");
         assert_eq!(lib.co_changes.get("src/main.rs"), Some(&1));
+    }
+
+    #[test]
+    fn recent_points_for_age_uses_expected_buckets() {
+        assert_eq!(recent_points_for_age(0), 3);
+        assert_eq!(recent_points_for_age(7), 3);
+        assert_eq!(recent_points_for_age(8), 2);
+        assert_eq!(recent_points_for_age(30), 2);
+        assert_eq!(recent_points_for_age(31), 1);
+    }
+
+    #[test]
+    fn normalize_location_prefers_repo_relative_path() {
+        let repo_path = Path::new("/repo");
+        let in_repo = Path::new("/repo/src/main.rs");
+        let outside_repo = Path::new("/other/path.rs");
+
+        assert_eq!(normalize_location(repo_path, in_repo), "src/main.rs");
+        assert_eq!(
+            normalize_location(repo_path, outside_repo),
+            "/other/path.rs"
+        );
+    }
+
+    #[test]
+    fn line_counts_to_u64_maps_none_to_zero_counts() {
+        assert_eq!(line_counts_to_u64(None), (0, 0));
+    }
+
+    #[test]
+    fn line_counts_to_u64_converts_insertions_and_removals() {
+        assert_eq!(line_counts_to_u64(Some((7, 3))), (7, 3));
     }
 }
