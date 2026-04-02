@@ -74,6 +74,12 @@ fn analyze(repo: &Path) -> Result<Vec<Hotspot>> {
     source.hotspots(300)
 }
 
+fn hotspot_by_location<'a>(hotspots: &'a [Hotspot], location: &str) -> Option<&'a Hotspot> {
+    hotspots
+        .iter()
+        .find(|hotspot| hotspot.location() == location)
+}
+
 #[test]
 fn root_only_repository_is_analyzed() -> Result<()> {
     let repo = init_repo()?;
@@ -195,6 +201,279 @@ fn merge_history_uses_first_parent_traversal() -> Result<()> {
         feature_hotspot.touches(),
         1,
         "first-parent traversal should attribute feature file through the merge commit only"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn rename_commit_is_tracked_as_rewrite() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(
+        repo.path(),
+        "src/old_name.rs",
+        "pub fn value() -> u8 { 1 }\n",
+    )?;
+    commit_at(repo.path(), "add old name", "2025-01-01T00:00:00Z")?;
+
+    git(repo.path(), &["mv", "src/old_name.rs", "src/new_name.rs"])?;
+    commit_at(repo.path(), "rename file", "2025-01-02T00:00:00Z")?;
+
+    let hotspots = analyze(repo.path())?;
+
+    let new = hotspot_by_location(&hotspots, "src/new_name.rs")
+        .ok_or_else(|| eyre!("expected hotspot for src/new_name.rs"))?;
+
+    assert!(
+        hotspot_by_location(&hotspots, "src/old_name.rs").is_none(),
+        "old path should be merged into new path after rename"
+    );
+    assert_eq!(
+        new.touches(),
+        2,
+        "new path should include the pre-rename touch and the rename rewrite touch"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn move_commit_is_tracked_as_rewrite() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(repo.path(), "src/module.rs", "pub fn module() {}\n")?;
+    commit_at(repo.path(), "add module", "2025-01-01T00:00:00Z")?;
+
+    fs::create_dir_all(repo.path().join("src/core"))?;
+    git(repo.path(), &["mv", "src/module.rs", "src/core/module.rs"])?;
+    commit_at(repo.path(), "move module", "2025-01-02T00:00:00Z")?;
+
+    let hotspots = analyze(repo.path())?;
+
+    let new = hotspot_by_location(&hotspots, "src/core/module.rs")
+        .ok_or_else(|| eyre!("expected hotspot for src/core/module.rs"))?;
+
+    assert!(
+        hotspot_by_location(&hotspots, "src/module.rs").is_none(),
+        "old path should be merged into moved path hotspot"
+    );
+    assert_eq!(
+        new.touches(),
+        2,
+        "moved path should include the pre-move touch and the move rewrite touch"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn rename_preserves_hotspot_continuity_across_history() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(
+        repo.path(),
+        "src/old_continuity.rs",
+        "pub fn value() -> u8 {\n    1\n}\n",
+    )?;
+    commit_at(
+        repo.path(),
+        "add old continuity file",
+        "2025-01-01T00:00:00Z",
+    )?;
+
+    write_file(
+        repo.path(),
+        "src/old_continuity.rs",
+        "pub fn value() -> u8 {\n    2\n}\n",
+    )?;
+    commit_at(
+        repo.path(),
+        "update old continuity file",
+        "2025-01-02T00:00:00Z",
+    )?;
+
+    git(
+        repo.path(),
+        &["mv", "src/old_continuity.rs", "src/new_continuity.rs"],
+    )?;
+    commit_at(
+        repo.path(),
+        "rename continuity file",
+        "2025-01-03T00:00:00Z",
+    )?;
+
+    write_file(
+        repo.path(),
+        "src/new_continuity.rs",
+        "pub fn value() -> u8 {\n    3\n}\n",
+    )?;
+    commit_at(
+        repo.path(),
+        "update new continuity file",
+        "2025-01-04T00:00:00Z",
+    )?;
+
+    let hotspots = analyze(repo.path())?;
+
+    let new = hotspot_by_location(&hotspots, "src/new_continuity.rs")
+        .ok_or_else(|| eyre!("expected hotspot for src/new_continuity.rs"))?;
+
+    assert!(
+        hotspot_by_location(&hotspots, "src/old_continuity.rs").is_none(),
+        "old path should be merged into new path hotspot after rename"
+    );
+    assert_eq!(
+        new.touches(),
+        4,
+        "touches should include pre-rename edits, rename commit, and post-rename edit"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn rename_keeps_co_change_evidence_on_canonical_path() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(repo.path(), "src/old_signal.rs", "pub fn old_signal() {}\n")?;
+    write_file(repo.path(), "src/peer.rs", "pub fn peer() {}\n")?;
+    commit_at(repo.path(), "add old and peer", "2025-01-01T00:00:00Z")?;
+
+    git(
+        repo.path(),
+        &["mv", "src/old_signal.rs", "src/new_signal.rs"],
+    )?;
+    commit_at(repo.path(), "rename old to new", "2025-01-02T00:00:00Z")?;
+
+    write_file(
+        repo.path(),
+        "src/new_signal.rs",
+        "pub fn old_signal() { println!(\"n\"); }\n",
+    )?;
+    write_file(
+        repo.path(),
+        "src/peer.rs",
+        "pub fn peer() { println!(\"p\"); }\n",
+    )?;
+    commit_at(repo.path(), "touch new and peer", "2025-01-03T00:00:00Z")?;
+
+    let hotspots = analyze(repo.path())?;
+    let new_signal = hotspot_by_location(&hotspots, "src/new_signal.rs")
+        .ok_or_else(|| eyre!("expected hotspot for src/new_signal.rs"))?;
+
+    assert!(
+        hotspot_by_location(&hotspots, "src/old_signal.rs").is_none(),
+        "old path should not remain as separate hotspot"
+    );
+
+    let co_change_lines = new_signal.co_change_evidence_lines();
+    assert!(
+        co_change_lines
+            .iter()
+            .any(|line| line.contains("src/peer.rs")),
+        "co-change evidence should remain linked to peer file after rename"
+    );
+    assert!(
+        co_change_lines
+            .iter()
+            .all(|line| !line.contains("src/old_signal.rs")),
+        "co-change evidence should not mention the old path"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn chained_renames_collapse_into_final_path() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(repo.path(), "src/a.rs", "pub fn v() -> u8 { 1 }\n")?;
+    commit_at(repo.path(), "add a", "2025-01-01T00:00:00Z")?;
+
+    write_file(repo.path(), "src/a.rs", "pub fn v() -> u8 { 2 }\n")?;
+    commit_at(repo.path(), "update a", "2025-01-02T00:00:00Z")?;
+
+    git(repo.path(), &["mv", "src/a.rs", "src/b.rs"])?;
+    commit_at(repo.path(), "rename a to b", "2025-01-03T00:00:00Z")?;
+
+    write_file(repo.path(), "src/b.rs", "pub fn v() -> u8 { 3 }\n")?;
+    commit_at(repo.path(), "update b", "2025-01-04T00:00:00Z")?;
+
+    git(repo.path(), &["mv", "src/b.rs", "src/c.rs"])?;
+    commit_at(repo.path(), "rename b to c", "2025-01-05T00:00:00Z")?;
+
+    write_file(repo.path(), "src/c.rs", "pub fn v() -> u8 { 4 }\n")?;
+    commit_at(repo.path(), "update c", "2025-01-06T00:00:00Z")?;
+
+    let hotspots = analyze(repo.path())?;
+    let c = hotspot_by_location(&hotspots, "src/c.rs")
+        .ok_or_else(|| eyre!("expected hotspot for src/c.rs"))?;
+
+    assert!(
+        hotspot_by_location(&hotspots, "src/a.rs").is_none(),
+        "first path in rename chain should be collapsed"
+    );
+    assert!(
+        hotspot_by_location(&hotspots, "src/b.rs").is_none(),
+        "intermediate path in rename chain should be collapsed"
+    );
+    assert_eq!(
+        c.touches(),
+        6,
+        "final path should accumulate all touches before and after both renames"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn rename_preserves_commit_evidence_from_old_and_new_paths() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(
+        repo.path(),
+        "src/old_evidence.rs",
+        "pub fn v() -> u8 { 1 }\n",
+    )?;
+    commit_at(repo.path(), "old evidence add", "2025-01-01T00:00:00Z")?;
+
+    write_file(
+        repo.path(),
+        "src/old_evidence.rs",
+        "pub fn v() -> u8 { 2 }\n",
+    )?;
+    commit_at(repo.path(), "old evidence update", "2025-01-02T00:00:00Z")?;
+
+    git(
+        repo.path(),
+        &["mv", "src/old_evidence.rs", "src/new_evidence.rs"],
+    )?;
+    commit_at(repo.path(), "rename evidence file", "2025-01-03T00:00:00Z")?;
+
+    write_file(
+        repo.path(),
+        "src/new_evidence.rs",
+        "pub fn v() -> u8 { 3 }\n",
+    )?;
+    commit_at(repo.path(), "new evidence update", "2025-01-04T00:00:00Z")?;
+
+    let hotspots = analyze(repo.path())?;
+    let new = hotspot_by_location(&hotspots, "src/new_evidence.rs")
+        .ok_or_else(|| eyre!("expected hotspot for src/new_evidence.rs"))?;
+
+    let commit_lines = new.commit_evidence_lines();
+    assert!(
+        commit_lines
+            .iter()
+            .any(|line| line.contains("old evidence update")),
+        "commit evidence should retain pre-rename updates"
+    );
+    assert!(
+        commit_lines
+            .iter()
+            .any(|line| line.contains("new evidence update")),
+        "commit evidence should include post-rename updates"
     );
 
     Ok(())

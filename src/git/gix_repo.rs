@@ -18,6 +18,7 @@ const TRAVERSAL_POLICY: TraversalPolicy = TraversalPolicy::FirstParent;
 #[derive(Debug, Clone)]
 struct HotspotDelta {
     location: PathBuf,
+    previous_location: Option<PathBuf>,
     lines_added: u64,
     lines_removed: u64,
 }
@@ -53,6 +54,7 @@ impl CommitLike for Commit<'_> {
 #[derive(Debug, Clone)]
 struct FileDiffChange {
     location: PathBuf,
+    previous_location: Option<PathBuf>,
     is_tree: bool,
     lines_added: u64,
     lines_removed: u64,
@@ -150,7 +152,9 @@ fn record_co_changes(
     }
 }
 
-fn parse_change_location(change: &gix::object::tree::diff::ChangeDetached) -> (bool, PathBuf) {
+fn parse_change_location(
+    change: &gix::object::tree::diff::ChangeDetached,
+) -> (bool, PathBuf, Option<PathBuf>) {
     match change {
         gix::object::tree::diff::ChangeDetached::Addition {
             entry_mode,
@@ -166,14 +170,22 @@ fn parse_change_location(change: &gix::object::tree::diff::ChangeDetached) -> (b
             entry_mode,
             location,
             ..
-        }
-        | gix::object::tree::diff::ChangeDetached::Rewrite {
+        } => (
+            entry_mode.is_tree(),
+            PathBuf::from(String::from_utf8_lossy(location.as_ref()).into_owned()),
+            None,
+        ),
+        gix::object::tree::diff::ChangeDetached::Rewrite {
             entry_mode,
             location,
+            source_location,
             ..
         } => (
             entry_mode.is_tree(),
             PathBuf::from(String::from_utf8_lossy(location.as_ref()).into_owned()),
+            Some(PathBuf::from(
+                String::from_utf8_lossy(source_location.as_ref()).into_owned(),
+            )),
         ),
     }
 }
@@ -182,6 +194,36 @@ fn line_counts_to_u64(line_counts: Option<(u32, u32)>) -> (u64, u64) {
     match line_counts {
         Some((insertions, removals)) => (u64::from(insertions), u64::from(removals)),
         None => (0, 0),
+    }
+}
+
+fn resolve_canonical_path(
+    path: &str,
+    aliases: &std::collections::HashMap<String, String>,
+) -> String {
+    let mut current = path.to_string();
+    let mut seen = std::collections::HashSet::new();
+
+    while let Some(next) = aliases.get(&current) {
+        if !seen.insert(current.clone()) {
+            break;
+        }
+        current = next.clone();
+    }
+
+    current
+}
+
+fn register_path_alias(
+    aliases: &mut std::collections::HashMap<String, String>,
+    old_path: &str,
+    new_path: &str,
+) {
+    let old_canonical = resolve_canonical_path(old_path, aliases);
+    let new_canonical = resolve_canonical_path(new_path, aliases);
+
+    if old_canonical != new_canonical {
+        aliases.insert(old_canonical, new_canonical);
     }
 }
 
@@ -216,6 +258,8 @@ fn build_hotspots_from_commits<C: CommitLike>(
     mut get_hotspot_deltas: impl FnMut(&C) -> Result<Vec<HotspotDelta>>,
 ) -> Result<Vec<Hotspot>> {
     let mut by_path: std::collections::HashMap<String, Hotspot> = std::collections::HashMap::new();
+    let mut path_aliases: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     let now = chrono::Utc::now();
 
     for commit in commits.iter().take(max_commits) {
@@ -227,11 +271,18 @@ fn build_hotspots_from_commits<C: CommitLike>(
         let mut changed_paths = Vec::new();
 
         for delta in changes {
+            if let Some(previous_location) = &delta.previous_location {
+                let old_path = normalize_location(repo_path, previous_location);
+                let new_path = normalize_location(repo_path, &delta.location);
+                register_path_alias(&mut path_aliases, &old_path, &new_path);
+            }
+
             let location = normalize_location(repo_path, &delta.location);
+            let canonical_location = resolve_canonical_path(&location, &path_aliases);
 
-            changed_paths.push(location.clone());
+            changed_paths.push(canonical_location.clone());
 
-            let entry = get_or_create_hotspot(&mut by_path, location, age_days);
+            let entry = get_or_create_hotspot(&mut by_path, canonical_location, age_days);
             apply_delta_to_hotspot(entry, &delta, &commit_metadata, age_days, recent_points);
         }
 
@@ -257,6 +308,7 @@ fn get_hotspot_deltas_for_commit<C>(
         .filter(|change| !change.is_tree)
         .map(|change| HotspotDelta {
             location: repo_path.join(change.location),
+            previous_location: change.previous_location.map(|p| repo_path.join(p)),
             lines_added: change.lines_added,
             lines_removed: change.lines_removed,
         })
@@ -305,7 +357,9 @@ impl DeltaProvider<Commit<'_>> for GixRepository {
         };
 
         let mut diff_opts = gix::diff::Options::default();
-        diff_opts.track_path().track_rewrites(None);
+        diff_opts
+            .track_path()
+            .track_rewrites(Some(Default::default()));
 
         let changes =
             self.repo
@@ -317,7 +371,7 @@ impl DeltaProvider<Commit<'_>> for GixRepository {
         for change in changes {
             let attached = change.attach(&self.repo, &self.repo);
 
-            let (is_tree, location) = parse_change_location(&change);
+            let (is_tree, location, previous_location) = parse_change_location(&change);
 
             if is_tree {
                 resource_cache.clear_resource_cache_keep_allocation();
@@ -330,6 +384,7 @@ impl DeltaProvider<Commit<'_>> for GixRepository {
 
             changes_for_commit.push(FileDiffChange {
                 location,
+                previous_location,
                 is_tree,
                 lines_added,
                 lines_removed,
@@ -401,12 +456,14 @@ mod tests {
             Ok(vec![
                 FileDiffChange {
                     location: PathBuf::from("src/main.rs"),
+                    previous_location: None,
                     is_tree: false,
                     lines_added: 5,
                     lines_removed: 2,
                 },
                 FileDiffChange {
                     location: PathBuf::from("src"),
+                    previous_location: None,
                     is_tree: true,
                     lines_added: 0,
                     lines_removed: 0,
@@ -441,11 +498,13 @@ mod tests {
         let mut queued_deltas = VecDeque::from([
             vec![HotspotDelta {
                 location: PathBuf::from("/repo/src/main.rs"),
+                previous_location: None,
                 lines_added: 3,
                 lines_removed: 0,
             }],
             vec![HotspotDelta {
                 location: PathBuf::from("/repo/src/main.rs"),
+                previous_location: None,
                 lines_added: 1,
                 lines_removed: 1,
             }],
@@ -479,11 +538,13 @@ mod tests {
             Ok(vec![
                 HotspotDelta {
                     location: PathBuf::from("/repo/src/main.rs"),
+                    previous_location: None,
                     lines_added: 2,
                     lines_removed: 0,
                 },
                 HotspotDelta {
                     location: PathBuf::from("/repo/src/lib.rs"),
+                    previous_location: None,
                     lines_added: 4,
                     lines_removed: 0,
                 },
@@ -536,5 +597,47 @@ mod tests {
     #[test]
     fn line_counts_to_u64_converts_insertions_and_removals() {
         assert_eq!(line_counts_to_u64(Some((7, 3))), (7, 3));
+    }
+
+    #[test]
+    fn resolve_canonical_path_follows_alias_chain() {
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("src/a.rs".to_string(), "src/b.rs".to_string());
+        aliases.insert("src/b.rs".to_string(), "src/c.rs".to_string());
+
+        assert_eq!(
+            resolve_canonical_path("src/a.rs", &aliases),
+            "src/c.rs".to_string()
+        );
+    }
+
+    #[test]
+    fn build_hotspots_from_commits_merges_rename_history_into_destination_path() {
+        let mut commit = MockCommitLike::new();
+        commit
+            .expect_metadata()
+            .times(1)
+            .return_once(|| Ok(commit_metadata("ddd4444", "Dana", "dana@example.com")));
+
+        let hotspots = build_hotspots_from_commits(&[commit], Path::new("/repo"), 100, |_| {
+            Ok(vec![
+                HotspotDelta {
+                    location: PathBuf::from("/repo/src/new.rs"),
+                    previous_location: Some(PathBuf::from("/repo/src/old.rs")),
+                    lines_added: 1,
+                    lines_removed: 0,
+                },
+                HotspotDelta {
+                    location: PathBuf::from("/repo/src/old.rs"),
+                    previous_location: None,
+                    lines_added: 2,
+                    lines_removed: 0,
+                },
+            ])
+        })
+        .expect("build hotspots with rename continuity");
+
+        assert!(hotspots.iter().any(|h| h.location == "src/new.rs"));
+        assert!(!hotspots.iter().any(|h| h.location == "src/old.rs"));
     }
 }
