@@ -33,7 +33,7 @@ pub(crate) trait DeltaProvider<C> {
 
 fn parse_change_location(
     change: &gix::object::tree::diff::ChangeDetached,
-) -> (bool, PathBuf, Option<PathBuf>) {
+) -> (bool, bool, PathBuf, Option<PathBuf>) {
     match change {
         gix::object::tree::diff::ChangeDetached::Addition {
             entry_mode,
@@ -51,6 +51,7 @@ fn parse_change_location(
             ..
         } => (
             entry_mode.is_tree(),
+            entry_mode.is_blob_or_symlink(),
             PathBuf::from(String::from_utf8_lossy(location.as_ref()).into_owned()),
             None,
         ),
@@ -61,6 +62,7 @@ fn parse_change_location(
             ..
         } => (
             entry_mode.is_tree(),
+            entry_mode.is_blob_or_symlink(),
             PathBuf::from(String::from_utf8_lossy(location.as_ref()).into_owned()),
             Some(PathBuf::from(
                 String::from_utf8_lossy(source_location.as_ref()).into_owned(),
@@ -98,7 +100,7 @@ pub(crate) fn compute_file_diff_change_metadata(
 
     let mut out = Vec::new();
     for change in changes {
-        let (is_tree, location, previous_location) = parse_change_location(&change);
+        let (is_tree, _is_diffable, location, previous_location) = parse_change_location(&change);
         out.push(FileDiffChangeMeta {
             location,
             previous_location,
@@ -131,7 +133,7 @@ where
     for change in changes {
         let attached = change.attach(repo, repo);
 
-        let (is_tree, location, previous_location) = parse_change_location(&change);
+        let (is_tree, is_diffable, location, previous_location) = parse_change_location(&change);
         let meta = FileDiffChangeMeta {
             location: location.clone(),
             previous_location: previous_location.clone(),
@@ -139,6 +141,11 @@ where
         };
 
         if is_tree {
+            resource_cache.clear_resource_cache_keep_allocation();
+            continue;
+        }
+
+        if !is_diffable {
             resource_cache.clear_resource_cache_keep_allocation();
             continue;
         }

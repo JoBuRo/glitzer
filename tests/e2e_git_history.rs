@@ -46,6 +46,22 @@ fn git(repo: &Path, args: &[&str]) -> Result<()> {
     git_with_env(repo, args, &[])
 }
 
+fn git_stdout(repo: &Path, args: &[&str]) -> Result<String> {
+    let output = Command::new("git").current_dir(repo).args(args).output()?;
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(eyre!(
+        "git command failed: git {}\nstdout:\n{}\nstderr:\n{}",
+        args.join(" "),
+        stdout,
+        stderr
+    ))
+}
+
 fn git_with_env(repo: &Path, args: &[&str], envs: &[(&str, &str)]) -> Result<()> {
     let mut command = Command::new("git");
     command.current_dir(repo).args(args);
@@ -629,6 +645,105 @@ fn chained_rename_then_delete_is_excluded() -> Result<()> {
     assert!(
         hotspot_by_location(&hotspots, "src/live_only.rs").is_some(),
         "live path should remain visible"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn submodule_gitlink_change_does_not_fail_analysis() -> Result<()> {
+    let parent = init_repo()?;
+    let child = init_repo()?;
+
+    write_file(child.path(), "lib.rs", "pub fn v() -> u8 { 1 }\n")?;
+    commit_at(child.path(), "child v1", "2025-01-01T00:00:00Z")?;
+    let child_head = git_stdout(child.path(), &["rev-parse", "HEAD"])?;
+
+    write_file(parent.path(), "src/live.rs", "pub fn live() {}\n")?;
+    commit_at(parent.path(), "add live", "2025-01-01T00:00:00Z")?;
+
+    git(
+        parent.path(),
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("160000,{},deps/submod", child_head),
+        ],
+    )?;
+    git_with_env(
+        parent.path(),
+        &["commit", "-m", "add submodule gitlink"],
+        &[
+            ("GIT_AUTHOR_DATE", "2025-01-02T00:00:00Z"),
+            ("GIT_COMMITTER_DATE", "2025-01-02T00:00:00Z"),
+        ],
+    )?;
+
+    let hotspots = analyze(parent.path())?;
+    assert!(
+        hotspot_by_location(&hotspots, "src/live.rs").is_some(),
+        "analysis should succeed and still include regular file hotspots"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn submodule_gitlink_updates_do_not_fail_analysis() -> Result<()> {
+    let parent = init_repo()?;
+    let child = init_repo()?;
+
+    write_file(child.path(), "lib.rs", "pub fn v() -> u8 { 1 }\n")?;
+    commit_at(child.path(), "child v1", "2025-01-01T00:00:00Z")?;
+    let child_v1 = git_stdout(child.path(), &["rev-parse", "HEAD"])?;
+
+    write_file(parent.path(), "src/live.rs", "pub fn live() {}\n")?;
+    commit_at(parent.path(), "add live", "2025-01-01T00:00:00Z")?;
+
+    git(
+        parent.path(),
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("160000,{},deps/submod", child_v1),
+        ],
+    )?;
+    git_with_env(
+        parent.path(),
+        &["commit", "-m", "add submodule gitlink"],
+        &[
+            ("GIT_AUTHOR_DATE", "2025-01-02T00:00:00Z"),
+            ("GIT_COMMITTER_DATE", "2025-01-02T00:00:00Z"),
+        ],
+    )?;
+
+    write_file(child.path(), "lib.rs", "pub fn v() -> u8 { 2 }\n")?;
+    commit_at(child.path(), "child v2", "2025-01-03T00:00:00Z")?;
+    let child_v2 = git_stdout(child.path(), &["rev-parse", "HEAD"])?;
+
+    git(
+        parent.path(),
+        &[
+            "update-index",
+            "--cacheinfo",
+            &format!("160000,{},deps/submod", child_v2),
+        ],
+    )?;
+    git_with_env(
+        parent.path(),
+        &["commit", "-m", "update submodule gitlink"],
+        &[
+            ("GIT_AUTHOR_DATE", "2025-01-04T00:00:00Z"),
+            ("GIT_COMMITTER_DATE", "2025-01-04T00:00:00Z"),
+        ],
+    )?;
+
+    let hotspots = analyze(parent.path())?;
+    assert!(
+        hotspot_by_location(&hotspots, "src/live.rs").is_some(),
+        "analysis should remain stable after submodule gitlink updates"
     );
 
     Ok(())
