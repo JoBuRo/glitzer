@@ -33,6 +33,13 @@ Near-term scope:
 - keep analysis based on Git history signals (churn, touches, ownership spread, recency, coupling)
 - time-window controls may be added later as a UI enhancement
 
+Implemented analysis semantics to preserve:
+- Commit traversal uses first-parent policy for deterministic merge attribution.
+- Rename/move continuity is preserved via rewrite tracking and canonical path aliasing.
+- Default ranking excludes files not present in current `HEAD`.
+- Diff processing prunes irrelevant history for performance while preserving #2/#9 semantics.
+- Submodule gitlink (`EntryKind::Commit`) tree entries are non-diffable and must be skipped for line counts.
+
 ## Engineering Expectations For Agents
 
 - Preserve the current product framing: decision support for refactoring, not generic repo browsing.
@@ -68,7 +75,20 @@ Near-term scope:
 - Keep snapshots deterministic (fixed dimensions, fixed test data, no clock-dependent values unless injected).
 - When updating widget layout/copy intentionally, update the expected snapshot strings in the same commit.
 
+Integration test guidance:
+- End-to-end Git-history scenarios live in `tests/e2e_git_history.rs`.
+- Use temporary repos with deterministic commit times and explicit branch control.
+- Include edge cases for detached HEAD, packed objects, merges, rewrites, deletions, and submodule gitlinks when relevant.
+
 ## Commit Guidance
+
+## Commit Philosophy
+
+- Every commit should introduce a necessary behavior change.
+- Every commit should include the tests required to specify and verify that behavior change.
+- Avoid test-only commits that do not change runtime behavior.
+- Avoid behavior-only commits without accompanying tests, unless a test is not feasible and the reason is documented.
+- Prefer small, behavior-complete commits over broad mixed commits.
 
 - Keep agent-authored changes scoped so they fit in one commit or a small number of commits.
 - Prefer short, atomic commits when possible.
