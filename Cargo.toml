@@ -2,6 +2,13 @@
 name = "glitzer"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+description = "A Rust TUI that identifies Git-history-driven refactoring hotspots"
+readme = "README.md"
+repository = "https://github.com/JoBuRo/glitzer"
+license = "Apache-2.0"
+keywords = ["git", "tui", "refactoring", "hotspots", "analysis"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 bytes = "1.10.1"
