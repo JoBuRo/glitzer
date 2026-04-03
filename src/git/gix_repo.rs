@@ -15,6 +15,7 @@ use super::hotspot_aggregation::{
 use super::path_continuity::{PathAliases, register_path_alias, resolve_canonical_path};
 use crate::models::hotspot::Hotspot;
 use crate::models::hotspot_source::HotspotSource;
+use crate::models::path_kind::{PathKind, classify_path_kind};
 
 #[derive(Debug, Copy, Clone)]
 enum TraversalPolicy {
@@ -220,11 +221,24 @@ impl HotspotSource for GixRepository {
 
         let head_tree = self.head_tree()?;
         let mut filtered = Vec::with_capacity(hotspots.len());
-        for hotspot in hotspots {
+        for mut hotspot in hotspots {
             if self.path_exists_in_head(&head_tree, hotspot.location())? {
+                hotspot.default_rank_multiplier_percent =
+                    if classify_path_kind(hotspot.location()) == PathKind::Lockfile {
+                        20
+                    } else {
+                        100
+                    };
                 filtered.push(hotspot);
             }
         }
+
+        filtered.sort_by_key(|hotspot| {
+            (
+                std::cmp::Reverse(hotspot.effective_score()),
+                std::cmp::Reverse(hotspot.score()),
+            )
+        });
 
         Ok(filtered)
     }

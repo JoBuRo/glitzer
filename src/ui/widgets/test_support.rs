@@ -22,6 +22,7 @@ pub(crate) fn hotspot_with_counts(
         recent_commits: vec![],
         co_changes: vec![],
         author_touches: vec![],
+        default_rank_multiplier_percent: 100,
     })
 }
 
@@ -59,6 +60,7 @@ pub(crate) fn hotspot_payment() -> Hotspot {
             ("Alice <alice@example.com>", 6),
             ("Bob <bob@example.com>", 4),
         ],
+        default_rank_multiplier_percent: 100,
     })
 }
 
@@ -79,5 +81,6 @@ pub(crate) fn hotspot_ui() -> Hotspot {
         )],
         co_changes: vec![("src/ui/layout.rs", 2)],
         author_touches: vec![("Eve <eve@example.com>", 5)],
+        default_rank_multiplier_percent: 100,
     })
 }

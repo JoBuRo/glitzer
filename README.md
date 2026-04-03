@@ -43,6 +43,7 @@ It:
 - ranks files by likely maintenance risk based on Git history
 - explains why a file is ranked highly
 - focuses the default view on actionable files in HEAD
+- de-weights lockfiles in default ranking to keep refactoring candidates prominent
 - provides evidence views for validation and interpretation
 
 ### Evidence tabs

@@ -99,6 +99,7 @@ mod tests {
             recent_commits: vec![("abcdef1", "Test", "2026-01-01", "msg", 4)],
             co_changes: vec![("other.rs", 1)],
             author_touches: vec![("Test <test@example.com>", 3)],
+            default_rank_multiplier_percent: 100,
         })
     }
 

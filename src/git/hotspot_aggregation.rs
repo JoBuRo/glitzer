@@ -81,6 +81,7 @@ fn get_or_create_hotspot(
         recent_commits: Vec::new(),
         co_changes: HashMap::new(),
         author_touches: HashMap::new(),
+        default_rank_multiplier_percent: 100,
     })
 }
 

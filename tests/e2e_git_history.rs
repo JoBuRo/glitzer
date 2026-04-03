@@ -651,6 +651,56 @@ fn chained_rename_then_delete_is_excluded() -> Result<()> {
 }
 
 #[test]
+fn lockfile_is_deweighted_in_default_hotspot_ranking() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(repo.path(), "Cargo.lock", "# lockfile\nversion = 1\n")?;
+    write_file(repo.path(), "src/main.rs", "pub fn v() -> u8 { 1 }\n")?;
+    commit_at(
+        repo.path(),
+        "add lockfile and source",
+        "2025-01-01T00:00:00Z",
+    )?;
+
+    write_file(repo.path(), "Cargo.lock", "# lockfile\nversion = 2\n")?;
+    commit_at(repo.path(), "update lockfile 1", "2025-01-02T00:00:00Z")?;
+
+    write_file(repo.path(), "Cargo.lock", "# lockfile\nversion = 3\n")?;
+    commit_at(repo.path(), "update lockfile 2", "2025-01-03T00:00:00Z")?;
+
+    write_file(
+        repo.path(),
+        "src/main.rs",
+        "pub fn v() -> u8 {\n    let x = 2;\n    x\n}\n",
+    )?;
+    commit_at(repo.path(), "update source 1", "2025-01-04T00:00:00Z")?;
+
+    write_file(
+        repo.path(),
+        "src/main.rs",
+        "pub fn v() -> u8 {\n    let x = 3;\n    let y = x + 1;\n    y\n}\n",
+    )?;
+    commit_at(repo.path(), "update source 2", "2025-01-05T00:00:00Z")?;
+
+    let hotspots = analyze(repo.path())?;
+
+    assert_eq!(
+        hotspots[0].location(),
+        "src/main.rs",
+        "default ranking should prefer actionable source files over lockfiles"
+    );
+
+    let lockfile = hotspot_by_location(&hotspots, "Cargo.lock")
+        .ok_or_else(|| eyre!("expected Cargo.lock hotspot to remain visible but deweighted"))?;
+    assert!(
+        lockfile.effective_score() < lockfile.score(),
+        "lockfile hotspot should receive default de-weighting"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn submodule_gitlink_change_does_not_fail_analysis() -> Result<()> {
     let parent = init_repo()?;
     let child = init_repo()?;

@@ -11,6 +11,7 @@ pub struct Hotspot {
     pub(crate) recent_commits: Vec<CommitEvidence>,
     pub(crate) co_changes: HashMap<String, u64>,
     pub(crate) author_touches: HashMap<String, u64>,
+    pub(crate) default_rank_multiplier_percent: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +34,7 @@ pub(crate) struct HotspotTestData<'a> {
     pub recent_commits: Vec<(&'a str, &'a str, &'a str, &'a str, u64)>,
     pub co_changes: Vec<(&'a str, u64)>,
     pub author_touches: Vec<(&'a str, u64)>,
+    pub default_rank_multiplier_percent: u8,
 }
 
 impl Hotspot {
@@ -45,6 +47,20 @@ impl Hotspot {
 
     pub fn location(&self) -> &str {
         &self.location
+    }
+
+    pub fn effective_score(&self) -> u64 {
+        (self.score() * self.default_rank_multiplier_percent as u64) / 100
+    }
+
+    pub fn default_rank_adjustment_line(&self) -> Option<String> {
+        if self.default_rank_multiplier_percent >= 100 {
+            return None;
+        }
+        Some(format!(
+            "Default ranking adjustment: lockfile de-weight x{:.2}",
+            self.default_rank_multiplier_percent as f64 / 100.0
+        ))
     }
 
     pub fn touches(&self) -> u64 {
@@ -187,6 +203,7 @@ impl Hotspot {
                 .into_iter()
                 .map(|(author, count)| (author.to_string(), count))
                 .collect(),
+            default_rank_multiplier_percent: data.default_rank_multiplier_percent,
         }
     }
 }
