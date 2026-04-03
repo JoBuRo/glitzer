@@ -90,6 +90,15 @@ fn analyze(repo: &Path) -> Result<Vec<Hotspot>> {
     source.hotspots(300)
 }
 
+fn analyze_with_excludes(repo: &Path, excludes: &[&str]) -> Result<Vec<Hotspot>> {
+    let exclude_rules = excludes
+        .iter()
+        .map(|rule| (*rule).to_string())
+        .collect::<Vec<_>>();
+    let source = GixRepository::with_excludes(repo, &exclude_rules)?;
+    source.hotspots(300)
+}
+
 fn hotspot_by_location<'a>(hotspots: &'a [Hotspot], location: &str) -> Option<&'a Hotspot> {
     hotspots
         .iter()
@@ -651,7 +660,7 @@ fn chained_rename_then_delete_is_excluded() -> Result<()> {
 }
 
 #[test]
-fn lockfile_is_deweighted_in_default_hotspot_ranking() -> Result<()> {
+fn lockfile_is_excluded_from_default_hotspot_ranking() -> Result<()> {
     let repo = init_repo()?;
 
     write_file(repo.path(), "Cargo.lock", "# lockfile\nversion = 1\n")?;
@@ -684,17 +693,13 @@ fn lockfile_is_deweighted_in_default_hotspot_ranking() -> Result<()> {
 
     let hotspots = analyze(repo.path())?;
 
-    assert_eq!(
-        hotspots[0].location(),
-        "src/main.rs",
-        "default ranking should prefer actionable source files over lockfiles"
-    );
-
-    let lockfile = hotspot_by_location(&hotspots, "Cargo.lock")
-        .ok_or_else(|| eyre!("expected Cargo.lock hotspot to remain visible but deweighted"))?;
     assert!(
-        lockfile.effective_score() < lockfile.score(),
-        "lockfile hotspot should receive default de-weighting"
+        hotspot_by_location(&hotspots, "Cargo.lock").is_none(),
+        "lockfiles should be excluded from the default hotspot ranking"
+    );
+    assert!(
+        hotspot_by_location(&hotspots, "src/main.rs").is_some(),
+        "regular source files should remain visible"
     );
 
     Ok(())
@@ -754,6 +759,52 @@ fn generated_paths_are_excluded_from_default_hotspot_ranking() -> Result<()> {
         hotspot_by_location(&hotspots, "src/live.rs").is_some(),
         "regular source files should remain visible"
     );
+
+    Ok(())
+}
+
+#[test]
+fn manual_exclude_rule_hides_exact_file() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(repo.path(), "src/keep.rs", "pub fn keep() {}\n")?;
+    write_file(repo.path(), "src/hidden.rs", "pub fn hidden() {}\n")?;
+    commit_at(repo.path(), "add files", "2025-01-01T00:00:00Z")?;
+
+    write_file(
+        repo.path(),
+        "src/hidden.rs",
+        "pub fn hidden() { println!(\"x\"); }\n",
+    )?;
+    commit_at(repo.path(), "update hidden", "2025-01-02T00:00:00Z")?;
+
+    let hotspots = analyze_with_excludes(repo.path(), &["src/hidden.rs"])?;
+
+    assert!(hotspot_by_location(&hotspots, "src/hidden.rs").is_none());
+    assert!(hotspot_by_location(&hotspots, "src/keep.rs").is_some());
+
+    Ok(())
+}
+
+#[test]
+fn manual_exclude_rule_hides_directory_prefix() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(repo.path(), "custom/noise/a.rs", "pub fn a() {}\n")?;
+    write_file(repo.path(), "src/live.rs", "pub fn live() {}\n")?;
+    commit_at(repo.path(), "add custom and live", "2025-01-01T00:00:00Z")?;
+
+    write_file(
+        repo.path(),
+        "custom/noise/a.rs",
+        "pub fn a() { println!(\"n\"); }\n",
+    )?;
+    commit_at(repo.path(), "update custom noise", "2025-01-02T00:00:00Z")?;
+
+    let hotspots = analyze_with_excludes(repo.path(), &["custom/noise/"])?;
+
+    assert!(hotspot_by_location(&hotspots, "custom/noise/a.rs").is_none());
+    assert!(hotspot_by_location(&hotspots, "src/live.rs").is_some());
 
     Ok(())
 }

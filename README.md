@@ -43,8 +43,7 @@ It:
 - ranks files by likely maintenance risk based on Git history
 - explains why a file is ranked highly
 - focuses the default view on actionable files in HEAD
-- de-weights lockfiles in default ranking to keep refactoring candidates prominent
-- excludes generated and vendored paths from the default hotspot list
+- excludes lockfiles, generated paths, and vendored paths from the default hotspot list
 - provides evidence views for validation and interpretation
 
 ### Evidence tabs
@@ -98,6 +97,12 @@ Run Glitzer for a specific repository:
 glitzer --repo /path/to/repo
 ```
 
+Add one or more manual blacklist rules (exact file or directory prefix ending in `/`):
+
+```bash
+glitzer --exclude Cargo.lock --exclude custom/noise/
+```
+
 ---
 
 ## Keyboard controls
@@ -137,6 +142,8 @@ Current behavior:
 - merge traversal follows a **first-parent policy** for deterministic mainline attribution
 - rename and move continuity is preserved using **Git rewrite tracking**
 - deleted files are excluded from the default hotspot list
+- lockfiles, generated paths, and vendored paths are excluded from the default hotspot list
+- `--exclude` appends additional blacklist rules (exact file or directory prefix)
 - static code complexity is **not** included
 
 This keeps the tool simple and explainable while the hotspot model matures.

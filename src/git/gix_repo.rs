@@ -13,9 +13,9 @@ use super::hotspot_aggregation::{
     HotspotDelta, build_hotspots_from_commits, get_hotspot_deltas_for_commit_filtered,
 };
 use super::path_continuity::{PathAliases, register_path_alias, resolve_canonical_path};
+use crate::models::blacklist::HotspotBlacklist;
 use crate::models::hotspot::Hotspot;
 use crate::models::hotspot_source::HotspotSource;
-use crate::models::path_kind::{PathKind, classify_path_kind};
 
 #[derive(Debug, Copy, Clone)]
 enum TraversalPolicy {
@@ -27,16 +27,25 @@ const TRAVERSAL_POLICY: TraversalPolicy = TraversalPolicy::FirstParent;
 pub struct GixRepository {
     repo: Gix,
     path: PathBuf,
+    blacklist: HotspotBlacklist,
 }
 
 impl GixRepository {
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
+        Self::with_excludes(path, &[])
+    }
+
+    pub fn with_excludes(path: impl AsRef<Path>, excludes: &[String]) -> Result<Self> {
         let repo = discover(path)?;
         let path = repo
             .workdir()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| repo.path().to_path_buf());
-        Ok(Self { repo, path })
+        Ok(Self {
+            repo,
+            path,
+            blacklist: HotspotBlacklist::with_additional_rules(excludes),
+        })
     }
 
     fn head_hash(&self) -> Result<Id<'_>> {
@@ -221,28 +230,13 @@ impl HotspotSource for GixRepository {
 
         let head_tree = self.head_tree()?;
         let mut filtered = Vec::with_capacity(hotspots.len());
-        for mut hotspot in hotspots {
-            if self.path_exists_in_head(&head_tree, hotspot.location())? {
-                let path_kind = classify_path_kind(hotspot.location());
-                if path_kind == PathKind::Generated || path_kind == PathKind::Vendored {
-                    continue;
-                }
-
-                hotspot.default_rank_multiplier_percent = if path_kind == PathKind::Lockfile {
-                    20
-                } else {
-                    100
-                };
+        for hotspot in hotspots {
+            if self.path_exists_in_head(&head_tree, hotspot.location())?
+                && !self.blacklist.is_excluded(hotspot.location())
+            {
                 filtered.push(hotspot);
             }
         }
-
-        filtered.sort_by_key(|hotspot| {
-            (
-                std::cmp::Reverse(hotspot.effective_score()),
-                std::cmp::Reverse(hotspot.score()),
-            )
-        });
 
         Ok(filtered)
     }
