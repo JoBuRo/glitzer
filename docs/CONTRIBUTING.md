@@ -69,3 +69,9 @@ Before submitting a PR:
 - [ ] I added or updated tests for behavior changes.
 - [ ] I ran `cargo fmt`, `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info`.
 - [ ] I updated relevant documentation.
+
+## CI Workflows
+
+- `.github/workflows/rust.yml` contains the reusable Rust check jobs.
+- `.github/workflows/ci.yml` runs the reusable checks for pushes and pull requests on `main`.
+- `.github/workflows/release.yml` runs on `v*.*.*` tags, executes the same checks, then gates publish behind the `crates-io-publish` environment approval.

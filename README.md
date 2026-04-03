@@ -1,30 +1,66 @@
-# ✨ Glitzer ✨
+# ✨ Glitzer
 
-> Make your repositories ✨ shine ✨ , one refactor at a time
+> Make your repository shine, one refactor at a time
 
-Glitzer is a Rust TUI for identifying refactoring hotspots in a Git repository.
-It ranks files by change signals (churn, touches, ownership spread, and recency) and explains the ranking with tabbed evidence.
+Glitzer is a Rust TUI that helps you find refactoring hotspots in a Git repository.
+
+It analyzes Git history, ranks files by change-based risk signals, and shows the evidence behind the ranking so you can decide where to look first.
 
 [![Build](https://github.com/JoBuRo/glitzer/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/JoBuRo/glitzer/actions/workflows/rust.yml)
 
+![Glitzer screenshot](docs/tapes/demo.png)
+
 ---
 
-## What It Does
+## Why Glitzer?
 
-- Ranks likely refactoring hotspots from Git history
-- Shows selected-hotspot details and why it ranks highly
-- Keeps default ranking focused on actionable files present in `HEAD`
-- Provides evidence tabs:
-  - `Commits`: recent commits and authors touching the file
-  - `Co-change`: files frequently changed together
-  - `Ownership`: contributor distribution for the file
-  - `Notes`: risk and prioritization guidance
+When a codebase starts to feel hard to change, the problem is rarely spread evenly.
+
+Some files accumulate risk because they:
+
+- change often
+- are touched by many different contributors
+- keep reappearing in recent work
+- frequently change together with other files
+
+Glitzer helps you surface those files quickly and inspect the evidence behind the ranking.
+
+It is useful for:
+
+- **refactoring triage** — decide where cleanup work will pay off first
+- **codebase exploration** — understand risky or unstable areas faster
+- **technical leadership** — support maintenance decisions with historical signals
+- **onboarding** — identify “important but painful” files in an unfamiliar repository
+
+---
+
+## What Glitzer does
+
+Glitzer currently focuses on **Git-history-driven hotspot detection**.
+
+It:
+
+- ranks files by likely maintenance risk based on Git history
+- explains why a file is ranked highly
+- focuses the default view on actionable files in HEAD
+- provides evidence views for validation and interpretation
+
+### Evidence tabs
+
+- **Commits** — recent commits and authors touching the file
+- **Co-change** — files that frequently change together
+- **Ownership** — contributor distribution for the file
+- **Notes** — risk and prioritization guidance
 
 ---
 
 ## Installation
 
-You need [Rust and Cargo](https://www.rust-lang.org/tools/install).
+### Prerequisites
+
+You need [Rust and Cargo](https://www.rust-lang.org).
+
+### Build from source
 
 ```bash
 git clone https://github.com/JoBuRo/glitzer.git
@@ -32,13 +68,13 @@ cd glitzer
 cargo build --release
 ```
 
-Install the local release build into your Cargo bin directory:
+### Install locally
 
 ```bash
 cargo install --path . --locked
 ```
 
-After installation, run it from anywhere with:
+After installation:
 
 ```bash
 glitzer
@@ -51,36 +87,126 @@ glitzer
 Run Glitzer for the current repository:
 
 ```bash
-./target/release/glitzer
+glitzer
 ```
 
-Run Glitzer for a specific repository path:
+Run Glitzer for a specific repository:
 
 ```bash
-./target/release/glitzer --repo /path/to/repo
+glitzer --repo /path/to/repo
 ```
-
-### Keyboard Controls
-
-- `j` / `k`: move selected hotspot
-- `h` / `l`: switch evidence tabs
-- `Ctrl+u` / `Ctrl+d`: scroll evidence up/down
-- `q`: quit
 
 ---
 
-## Current Scope
+## Keyboard controls
 
-Glitzer is currently Git-history-driven. It does not yet include static complexity analysis or configurable time windows in the UI.
-Merge history traversal currently follows a first-parent policy for deterministic hotspot attribution on mainline history.
-Rename and move continuity is preserved using Git rewrite tracking, and deleted files are excluded from the default hotspot list.
+- `j` / `k` — move selected hotspot
+- `h` / `l` — switch evidence tabs
+- `Ctrl+u` / `Ctrl+d` — scroll evidence up/down
+- `q` — quit
+
+---
+
+## How to read the results
+
+Glitzer does **not** claim that a hotspot is automatically “bad code”.
+
+A high-ranking file is better understood as a file that deserves attention because its history suggests elevated maintenance risk or coordination cost.
+
+In practice, hotspots can indicate:
+
+- refactoring candidates
+- unstable responsibilities
+- coordination bottlenecks
+- architectural seams under pressure
+- files worth reviewing before larger changes
+
+Use the ranking as a starting point, then inspect the evidence tabs before drawing conclusions.
+
+---
+
+## Current scope and behavior
+
+Glitzer is intentionally focused.
+
+Current behavior:
+
+- analysis is based on **Git history**
+- merge traversal follows a **first-parent policy** for deterministic mainline attribution
+- rename and move continuity is preserved using **Git rewrite tracking**
+- deleted files are excluded from the default hotspot list
+- static code complexity is **not** included
+
+This keeps the tool simple and explainable while the hotspot model matures.
+
+---
+
+## Demo
+
+![Glitzer demo](docs/tapes/demo.gif)
+
+---
+
+## Project status
+
+Glitzer is under active development.
+
+Current priorities are centered on:
+
+- explainability of hotspot scoring
+- better user controls for analysis scope
+- improved interaction flow in the TUI
+
+Feedback from real repositories is especially useful.
 
 ---
 
 ## Contributing
 
 Issues and pull requests are welcome.
-See the contribution guide in `docs/CONTRIBUTING.md`.
+
+Please see: `docs/CONTRIBUTING.md`
+
+Good contributions include:
+
+- bug reports with reproducible repository history scenarios
+- UX feedback from real repository usage
+- documentation improvements
+- tests for edge cases in Git history handling
+- improvements to hotspot explainability
+
+---
+
+## Development
+
+Build:
+
+```bash
+cargo build
+```
+
+Run tests:
+
+```bash
+cargo test
+```
+
+Run against this repository:
+
+```bash
+cargo run -- --repo .
+```
+
+---
+
+## Roadmap
+
+Near-term areas of work include:
+
+- configurable analysis windows
+- score breakdown and weighting transparency
+- non-blocking startup and loading/progress state
+- improved trend visualization in hotspot details
 
 ---
 
