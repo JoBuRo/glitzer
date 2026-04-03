@@ -71,6 +71,16 @@ impl GixRepository {
     fn get_hotspot_deltas(&self, commit: &Commit) -> Result<Vec<HotspotDelta>> {
         get_hotspot_deltas_for_commit(self.get_path(), self, commit)
     }
+
+    fn head_tree(&self) -> Result<gix::Tree<'_>> {
+        Ok(self.repo.head_commit()?.tree()?)
+    }
+
+    fn path_exists_in_head(&self, head_tree: &gix::Tree<'_>, location: &str) -> Result<bool> {
+        Ok(head_tree
+            .lookup_entry_by_path(Path::new(location))?
+            .is_some())
+    }
 }
 
 impl DeltaProvider<Commit<'_>> for GixRepository {
@@ -88,9 +98,20 @@ impl DeltaProvider<Commit<'_>> for GixRepository {
 impl HotspotSource for GixRepository {
     fn hotspots(&self, max_commits: usize) -> Result<Vec<Hotspot>> {
         let commits = self.get_commits()?;
-        build_hotspots_from_commits(&commits, self.get_path(), max_commits, |commit| {
-            self.get_hotspot_deltas(commit)
-        })
+        let hotspots =
+            build_hotspots_from_commits(&commits, self.get_path(), max_commits, |commit| {
+                self.get_hotspot_deltas(commit)
+            })?;
+
+        let head_tree = self.head_tree()?;
+        let mut filtered = Vec::with_capacity(hotspots.len());
+        for hotspot in hotspots {
+            if self.path_exists_in_head(&head_tree, hotspot.location())? {
+                filtered.push(hotspot);
+            }
+        }
+
+        Ok(filtered)
     }
 }
 

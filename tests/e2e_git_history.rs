@@ -478,3 +478,75 @@ fn rename_preserves_commit_evidence_from_old_and_new_paths() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn deleted_file_is_excluded_from_default_hotspots() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(repo.path(), "src/dead.rs", "pub fn dead() -> u8 { 1 }\n")?;
+    commit_at(repo.path(), "add dead file", "2025-01-01T00:00:00Z")?;
+
+    write_file(repo.path(), "src/dead.rs", "pub fn dead() -> u8 { 2 }\n")?;
+    commit_at(repo.path(), "update dead file", "2025-01-02T00:00:00Z")?;
+
+    git(repo.path(), &["rm", "src/dead.rs"])?;
+    commit_at(repo.path(), "remove dead file", "2025-01-03T00:00:00Z")?;
+
+    write_file(repo.path(), "src/live.rs", "pub fn live() {}\n")?;
+    commit_at(repo.path(), "add live file", "2025-01-04T00:00:00Z")?;
+
+    let hotspots = analyze(repo.path())?;
+
+    assert!(
+        hotspot_by_location(&hotspots, "src/dead.rs").is_none(),
+        "deleted path should be excluded from default hotspot ranking"
+    );
+    assert!(
+        hotspot_by_location(&hotspots, "src/live.rs").is_some(),
+        "active path should still appear in default hotspot ranking"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn deleted_high_churn_file_does_not_outrank_live_files() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(repo.path(), "src/dead_hot.rs", "pub fn hot() -> u8 { 1 }\n")?;
+    commit_at(repo.path(), "add hot dead file", "2025-01-01T00:00:00Z")?;
+
+    write_file(repo.path(), "src/dead_hot.rs", "pub fn hot() -> u8 { 2 }\n")?;
+    commit_at(
+        repo.path(),
+        "update hot dead file 1",
+        "2025-01-02T00:00:00Z",
+    )?;
+
+    write_file(repo.path(), "src/dead_hot.rs", "pub fn hot() -> u8 { 3 }\n")?;
+    commit_at(
+        repo.path(),
+        "update hot dead file 2",
+        "2025-01-03T00:00:00Z",
+    )?;
+
+    git(repo.path(), &["rm", "src/dead_hot.rs"])?;
+    commit_at(repo.path(), "remove hot dead file", "2025-01-04T00:00:00Z")?;
+
+    write_file(repo.path(), "src/live_low.rs", "pub fn live_low() {}\n")?;
+    commit_at(repo.path(), "add live low file", "2025-01-05T00:00:00Z")?;
+
+    let hotspots = analyze(repo.path())?;
+
+    assert!(
+        hotspot_by_location(&hotspots, "src/dead_hot.rs").is_none(),
+        "high-churn deleted file should not be listed"
+    );
+    assert_eq!(
+        hotspots[0].location(),
+        "src/live_low.rs",
+        "top visible hotspot should be an active path"
+    );
+
+    Ok(())
+}
