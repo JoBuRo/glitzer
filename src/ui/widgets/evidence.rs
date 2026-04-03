@@ -47,6 +47,7 @@ impl EvidenceTab {
 #[derive(Debug)]
 pub struct EvidenceWidget {
     active_tab: EvidenceTab,
+    scroll_offset: u16,
     selected_hotspot_name: String,
     commits_lines: Vec<String>,
     co_change_lines: Vec<String>,
@@ -58,6 +59,7 @@ impl EvidenceWidget {
     pub fn new(active_tab: EvidenceTab, hotspot: Option<&Hotspot>) -> Self {
         let mut widget = EvidenceWidget {
             active_tab,
+            scroll_offset: 0,
             selected_hotspot_name: "[none]".to_string(),
             commits_lines: vec!["No hotspot selected.".to_string()],
             co_change_lines: vec!["No hotspot selected.".to_string()],
@@ -70,10 +72,12 @@ impl EvidenceWidget {
 
     pub fn set_active_tab(&mut self, active_tab: EvidenceTab) {
         self.active_tab = active_tab;
+        self.scroll_offset = 0;
     }
 
     pub fn set_selected_hotspot(&mut self, hotspot: Option<&Hotspot>) {
         if let Some(hotspot) = hotspot {
+            self.scroll_offset = 0;
             self.selected_hotspot_name = hotspot.location().to_string();
             self.commits_lines = hotspot.commit_evidence_lines();
             self.co_change_lines = hotspot.co_change_evidence_lines();
@@ -82,6 +86,7 @@ impl EvidenceWidget {
             return;
         }
 
+        self.scroll_offset = 0;
         self.selected_hotspot_name = "[none]".to_string();
         self.commits_lines = vec!["No hotspot selected.".to_string()];
         self.co_change_lines = vec!["No hotspot selected.".to_string()];
@@ -120,6 +125,27 @@ impl EvidenceWidget {
         Text::from(lines)
     }
 
+    fn max_scroll_offset(&self) -> u16 {
+        let total_lines = 2 + self.active_tab_lines().len();
+        total_lines.saturating_sub(1) as u16
+    }
+
+    pub fn scroll_up(&mut self, amount: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(amount);
+    }
+
+    pub fn scroll_down(&mut self, amount: u16) {
+        self.scroll_offset = self
+            .scroll_offset
+            .saturating_add(amount)
+            .min(self.max_scroll_offset());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn scroll_offset(&self) -> u16 {
+        self.scroll_offset
+    }
+
     fn block(&self) -> Block<'_> {
         Block::bordered()
             .title(Line::from(" Evidence / Explanation ".bold()).centered())
@@ -144,7 +170,11 @@ impl Widget for &EvidenceWidget {
             .highlight_style(Style::default().blue().bold())
             .divider("|");
         Widget::render(tabs, layout[0], buf);
-        Widget::render(Paragraph::new(self.active_tab_text()), layout[1], buf);
+        Widget::render(
+            Paragraph::new(self.active_tab_text()).scroll((self.scroll_offset, 0)),
+            layout[1],
+            buf,
+        );
     }
 }
 
@@ -332,5 +362,30 @@ mod tests {
         assert_eq!(EvidenceTab::CoChange.index(), 1);
         assert_eq!(EvidenceTab::Ownership.index(), 2);
         assert_eq!(EvidenceTab::Notes.index(), 3);
+    }
+
+    #[test]
+    fn render_snapshot_commits_tab_with_scroll_offset() {
+        let mut widget = EvidenceWidget::new(EvidenceTab::Commits, None);
+        widget.selected_hotspot_name = "src/overflow.rs".to_string();
+        widget.commits_lines = (1..=6).map(|i| format!("commit line {i}")).collect();
+        widget.scroll_down(2);
+
+        let rendered = render_lines(&widget, 80, 10);
+
+        let expected = vec![
+            "┌─────────────────────────── Evidence / Explanation ───────────────────────────┐",
+            "│  Commits | Co-change | Ownership | Notes                                     │",
+            "│                                                                              │",
+            "│                                                                              │",
+            "│ - commit line 1                                                              │",
+            "│ - commit line 2                                                              │",
+            "│ - commit line 3                                                              │",
+            "│ - commit line 4                                                              │",
+            "│ - commit line 5                                                              │",
+            "└──────────────────────────────────────────────────────────────────────────────┘",
+        ];
+
+        assert_eq!(rendered, expected);
     }
 }

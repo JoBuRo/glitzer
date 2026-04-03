@@ -1,7 +1,7 @@
 use std::io;
 
 use color_eyre::eyre::Result;
-use crossterm::event::{Event, KeyCode, read};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, read};
 use ratatui::Frame;
 
 use crate::models::hotspot_source::HotspotSource;
@@ -41,23 +41,34 @@ impl App {
 
     fn handle_events(&mut self) -> io::Result<()> {
         if let Event::Key(key_event) = read()? {
-            self.handle_key_code(key_event.code);
+            self.handle_key_event(key_event);
         }
 
         Ok(())
     }
 
-    fn handle_key_code(&mut self, code: KeyCode) {
-        match code {
-            KeyCode::Char('q') => {
+    fn handle_key_event(&mut self, event: KeyEvent) {
+        match (event.code, event.modifiers) {
+            (KeyCode::Char('q'), _) => {
                 self.quit();
             }
-            KeyCode::Char('j') => self.current_view.switch_selection_down(),
-            KeyCode::Char('k') => self.current_view.switch_selection_up(),
-            KeyCode::Char('h') => self.current_view.switch_tab_left(),
-            KeyCode::Char('l') => self.current_view.switch_tab_right(),
+            (KeyCode::Char('j'), _) => self.current_view.switch_selection_down(),
+            (KeyCode::Char('k'), _) => self.current_view.switch_selection_up(),
+            (KeyCode::Char('h'), _) => self.current_view.switch_tab_left(),
+            (KeyCode::Char('l'), _) => self.current_view.switch_tab_right(),
+            (KeyCode::Char('d'), modifiers) if modifiers.contains(KeyModifiers::CONTROL) => {
+                self.current_view.scroll_evidence_down()
+            }
+            (KeyCode::Char('u'), modifiers) if modifiers.contains(KeyModifiers::CONTROL) => {
+                self.current_view.scroll_evidence_up()
+            }
             _ => {}
         }
+    }
+
+    #[cfg(test)]
+    fn handle_key_code(&mut self, code: KeyCode) {
+        self.handle_key_event(KeyEvent::new(code, KeyModifiers::NONE));
     }
 }
 
@@ -139,5 +150,17 @@ mod tests {
             app.current_view.active_tab(),
             EvidenceTab::Commits
         ));
+    }
+
+    #[test]
+    fn ctrl_u_and_ctrl_d_scroll_evidence() {
+        let mut app = app_with_two_hotspots();
+        assert_eq!(app.current_view.evidence_scroll_offset(), 0);
+
+        app.handle_key_event(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        assert!(app.current_view.evidence_scroll_offset() > 0);
+
+        app.handle_key_event(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert_eq!(app.current_view.evidence_scroll_offset(), 0);
     }
 }

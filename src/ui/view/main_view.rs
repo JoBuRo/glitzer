@@ -45,6 +45,14 @@ impl MainView {
         self.evidence.set_active_tab(self.active_tab);
     }
 
+    pub fn scroll_evidence_up(&mut self) {
+        self.evidence.scroll_up(4);
+    }
+
+    pub fn scroll_evidence_down(&mut self) {
+        self.evidence.scroll_down(4);
+    }
+
     pub fn switch_selection_down(&mut self) {
         if !self.hotspots.is_empty() {
             self.selected_hotspot_index =
@@ -77,6 +85,11 @@ impl MainView {
     pub(crate) fn active_tab(&self) -> EvidenceTab {
         self.active_tab
     }
+
+    #[cfg(test)]
+    pub(crate) fn evidence_scroll_offset(&self) -> u16 {
+        self.evidence.scroll_offset()
+    }
 }
 
 impl View for MainView {
@@ -90,6 +103,8 @@ impl View for MainView {
             "<J/K> ".blue().bold(),
             " Tabs ".into(),
             "<H/L> ".blue().bold(),
+            " Scroll ".into(),
+            "<Ctrl+U/D> ".blue().bold(),
         ]);
 
         let block = Block::bordered()
