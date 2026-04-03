@@ -53,14 +53,18 @@ impl Hotspots {
 impl Widget for &Hotspots {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = self.block();
+        let inner = block.inner(area);
+        let visible_items = ((inner.height as usize) / 2).max(1);
+        let max_start = self.items.len().saturating_sub(visible_items);
+        let centered_start = self.selected_index.saturating_sub(visible_items / 2);
+        let start = centered_start.min(max_start);
 
-        let start = self.selected_index.saturating_sub(3);
         let items: Vec<ListItem> = self
             .items
             .iter()
             .enumerate()
             .skip(start)
-            .take(6)
+            .take(visible_items)
             .map(|(idx, hotspot)| hotspot_list_item(idx, hotspot, idx == self.selected_index))
             .collect();
 
@@ -187,6 +191,10 @@ mod tests {
 
         let expected = vec![
             "┌───────────────────────────────────── Refactoring Attention ──────────────────────────────────────┐",
+            "│  3. file_2.rs    56                                                                              │",
+            "│  evidence: 3 touches, 30 lines changed, 1 authors, last touched 2d ago                           │",
+            "│  4. file_3.rs    71                                                                              │",
+            "│  evidence: 4 touches, 40 lines changed, 1 authors, last touched 3d ago                           │",
             "│  5. file_4.rs    86                                                                              │",
             "│  evidence: 5 touches, 50 lines changed, 1 authors, last touched 4d ago                           │",
             "│  6. file_5.rs    101                                                                             │",
@@ -195,10 +203,6 @@ mod tests {
             "│  evidence: 7 touches, 70 lines changed, 1 authors, last touched 6d ago                           │",
             "│  8. file_7.rs    131                                                                             │",
             "│  evidence: 8 touches, 80 lines changed, 1 authors, last touched 7d ago                           │",
-            "│                                                                                                  │",
-            "│                                                                                                  │",
-            "│                                                                                                  │",
-            "│                                                                                                  │",
             "└──────────────────────────────────────────────────────────────────────────────────────────────────┘",
         ];
 
@@ -281,5 +285,31 @@ mod tests {
 
         assert!(rendered.contains("5. file_4.rs"));
         assert!(!rendered.contains("1. file_4.rs"));
+    }
+
+    #[test]
+    fn render_snapshot_selection_window_small_height() {
+        let items: Vec<Hotspot> = (0..10)
+            .map(|i| hotspot_with_counts(&format!("file_{i}.rs"), i + 1, (i + 1) * 10, i as i64, 1))
+            .collect();
+        let hotspots = Hotspots {
+            items,
+            selected_index: 8,
+        };
+
+        let rendered = render_lines(&hotspots, 100, 8);
+
+        let expected = vec![
+            "┌───────────────────────────────────── Refactoring Attention ──────────────────────────────────────┐",
+            "│  8. file_7.rs    131                                                                             │",
+            "│  evidence: 8 touches, 80 lines changed, 1 authors, last touched 7d ago                           │",
+            "│  9. file_8.rs    146                                                                             │",
+            "│  evidence: 9 touches, 90 lines changed, 1 authors, last touched 8d ago                           │",
+            "│  10. file_9.rs    161                                                                            │",
+            "│  evidence: 10 touches, 100 lines changed, 1 authors, last touched 9d ago                         │",
+            "└──────────────────────────────────────────────────────────────────────────────────────────────────┘",
+        ];
+
+        assert_eq!(rendered, expected);
     }
 }
