@@ -1,4 +1,4 @@
-Output demo.gif
+Output docs/tapes/demo.gif
 
 Set Shell "bash"
 Set FontSize 18
@@ -12,13 +12,13 @@ Require glitzer
 Require git
 
 # Optional: start in your glitzer repo root, or change this path.
-Type "glitzer --repo ."
+Type "glitzer"
 Enter
 
 # Give startup a moment.
 Sleep 3s
 
-Screenshot demo.png
+Screenshot docs/tapes/demo.png
 
 # Move through a few hotspots.
 Type "j"
