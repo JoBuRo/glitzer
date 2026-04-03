@@ -701,6 +701,64 @@ fn lockfile_is_deweighted_in_default_hotspot_ranking() -> Result<()> {
 }
 
 #[test]
+fn vendored_paths_are_excluded_from_default_hotspot_ranking() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(repo.path(), "vendor/lib.c", "int lib() { return 1; }\n")?;
+    write_file(repo.path(), "src/live.rs", "pub fn live() {}\n")?;
+    commit_at(
+        repo.path(),
+        "add vendor and live files",
+        "2025-01-01T00:00:00Z",
+    )?;
+
+    write_file(repo.path(), "vendor/lib.c", "int lib() { return 2; }\n")?;
+    commit_at(repo.path(), "update vendored file", "2025-01-02T00:00:00Z")?;
+
+    let hotspots = analyze(repo.path())?;
+
+    assert!(
+        hotspot_by_location(&hotspots, "vendor/lib.c").is_none(),
+        "vendored paths should be excluded from default hotspot ranking"
+    );
+    assert!(
+        hotspot_by_location(&hotspots, "src/live.rs").is_some(),
+        "regular source files should remain visible"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn generated_paths_are_excluded_from_default_hotspot_ranking() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(repo.path(), "dist/app.js", "console.log('v1');\n")?;
+    write_file(repo.path(), "src/live.rs", "pub fn live() {}\n")?;
+    commit_at(
+        repo.path(),
+        "add dist and live files",
+        "2025-01-01T00:00:00Z",
+    )?;
+
+    write_file(repo.path(), "dist/app.js", "console.log('v2');\n")?;
+    commit_at(repo.path(), "update generated file", "2025-01-02T00:00:00Z")?;
+
+    let hotspots = analyze(repo.path())?;
+
+    assert!(
+        hotspot_by_location(&hotspots, "dist/app.js").is_none(),
+        "generated paths should be excluded from default hotspot ranking"
+    );
+    assert!(
+        hotspot_by_location(&hotspots, "src/live.rs").is_some(),
+        "regular source files should remain visible"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn submodule_gitlink_change_does_not_fail_analysis() -> Result<()> {
     let parent = init_repo()?;
     let child = init_repo()?;

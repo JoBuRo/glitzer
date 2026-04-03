@@ -44,6 +44,7 @@ It:
 - explains why a file is ranked highly
 - focuses the default view on actionable files in HEAD
 - de-weights lockfiles in default ranking to keep refactoring candidates prominent
+- excludes generated and vendored paths from the default hotspot list
 - provides evidence views for validation and interpretation
 
 ### Evidence tabs

@@ -223,12 +223,16 @@ impl HotspotSource for GixRepository {
         let mut filtered = Vec::with_capacity(hotspots.len());
         for mut hotspot in hotspots {
             if self.path_exists_in_head(&head_tree, hotspot.location())? {
-                hotspot.default_rank_multiplier_percent =
-                    if classify_path_kind(hotspot.location()) == PathKind::Lockfile {
-                        20
-                    } else {
-                        100
-                    };
+                let path_kind = classify_path_kind(hotspot.location());
+                if path_kind == PathKind::Generated || path_kind == PathKind::Vendored {
+                    continue;
+                }
+
+                hotspot.default_rank_multiplier_percent = if path_kind == PathKind::Lockfile {
+                    20
+                } else {
+                    100
+                };
                 filtered.push(hotspot);
             }
         }
