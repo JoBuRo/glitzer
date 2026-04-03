@@ -1,0 +1,17 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  checks:
+    uses: ./.github/workflows/rust.yml
+    with:
+      comment-coverage: ${{ github.event_name == 'pull_request' }}
