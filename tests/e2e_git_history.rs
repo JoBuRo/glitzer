@@ -550,3 +550,86 @@ fn deleted_high_churn_file_does_not_outrank_live_files() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn rename_then_delete_path_is_excluded() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(
+        repo.path(),
+        "src/legacy.rs",
+        "pub fn legacy() -> u8 { 1 }\n",
+    )?;
+    commit_at(repo.path(), "add legacy", "2025-01-01T00:00:00Z")?;
+
+    git(repo.path(), &["mv", "src/legacy.rs", "src/renamed.rs"])?;
+    commit_at(repo.path(), "rename legacy", "2025-01-02T00:00:00Z")?;
+
+    git(repo.path(), &["rm", "src/renamed.rs"])?;
+    commit_at(repo.path(), "delete renamed", "2025-01-03T00:00:00Z")?;
+
+    write_file(
+        repo.path(),
+        "src/live_anchor.rs",
+        "pub fn live_anchor() {}\n",
+    )?;
+    commit_at(repo.path(), "add live anchor", "2025-01-04T00:00:00Z")?;
+
+    let hotspots = analyze(repo.path())?;
+
+    assert!(
+        hotspot_by_location(&hotspots, "src/legacy.rs").is_none(),
+        "pre-rename path should be excluded when final path is deleted"
+    );
+    assert!(
+        hotspot_by_location(&hotspots, "src/renamed.rs").is_none(),
+        "deleted renamed path should be excluded"
+    );
+    assert!(
+        hotspot_by_location(&hotspots, "src/live_anchor.rs").is_some(),
+        "live anchor should remain visible"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn chained_rename_then_delete_is_excluded() -> Result<()> {
+    let repo = init_repo()?;
+
+    write_file(repo.path(), "src/one.rs", "pub fn one() -> u8 { 1 }\n")?;
+    commit_at(repo.path(), "add one", "2025-01-01T00:00:00Z")?;
+
+    git(repo.path(), &["mv", "src/one.rs", "src/two.rs"])?;
+    commit_at(repo.path(), "rename one to two", "2025-01-02T00:00:00Z")?;
+
+    git(repo.path(), &["mv", "src/two.rs", "src/three.rs"])?;
+    commit_at(repo.path(), "rename two to three", "2025-01-03T00:00:00Z")?;
+
+    git(repo.path(), &["rm", "src/three.rs"])?;
+    commit_at(repo.path(), "delete three", "2025-01-04T00:00:00Z")?;
+
+    write_file(repo.path(), "src/live_only.rs", "pub fn live_only() {}\n")?;
+    commit_at(repo.path(), "add live only", "2025-01-05T00:00:00Z")?;
+
+    let hotspots = analyze(repo.path())?;
+
+    assert!(
+        hotspot_by_location(&hotspots, "src/one.rs").is_none(),
+        "first rename source should be excluded"
+    );
+    assert!(
+        hotspot_by_location(&hotspots, "src/two.rs").is_none(),
+        "second rename source should be excluded"
+    );
+    assert!(
+        hotspot_by_location(&hotspots, "src/three.rs").is_none(),
+        "final deleted path should be excluded"
+    );
+    assert!(
+        hotspot_by_location(&hotspots, "src/live_only.rs").is_some(),
+        "live path should remain visible"
+    );
+
+    Ok(())
+}

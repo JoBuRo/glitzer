@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use color_eyre::eyre::Result;
 use gix::Commit;
 
-use super::diff_changes::DeltaProvider;
+use super::diff_changes::{DeltaProvider, FileDiffChangeMeta};
 use super::path_continuity::{PathAliases, register_path_alias, resolve_canonical_path};
 use crate::models::hotspot::Hotspot;
 
@@ -174,12 +174,16 @@ pub(crate) fn build_hotspots_from_commits<C: CommitLike>(
     Ok(items)
 }
 
-pub(crate) fn get_hotspot_deltas_for_commit<C>(
+pub(crate) fn get_hotspot_deltas_for_commit_filtered<C, F>(
     repo_path: &Path,
     provider: &impl DeltaProvider<C>,
     commit: &C,
-) -> Result<Vec<HotspotDelta>> {
-    let changes = provider.delta_changes(commit)?;
+    include: F,
+) -> Result<Vec<HotspotDelta>>
+where
+    F: FnMut(&FileDiffChangeMeta) -> bool,
+{
+    let changes = provider.delta_changes_filtered(commit, include)?;
     Ok(changes
         .into_iter()
         .filter(|change| !change.is_tree)
@@ -252,8 +256,9 @@ mod tests {
             ])
         });
 
-        let deltas = get_hotspot_deltas_for_commit(repo_path, &provider, &commit)
-            .expect("build hotspot deltas from provider");
+        let deltas =
+            get_hotspot_deltas_for_commit_filtered(repo_path, &provider, &commit, |_| true)
+                .expect("build hotspot deltas from provider");
 
         assert_eq!(deltas.len(), 1);
         assert_eq!(deltas[0].location, PathBuf::from("/repo/src/main.rs"));

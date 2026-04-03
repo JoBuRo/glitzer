@@ -13,8 +13,22 @@ pub(crate) struct FileDiffChange {
     pub(crate) lines_removed: u64,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct FileDiffChangeMeta {
+    pub(crate) location: PathBuf,
+    pub(crate) previous_location: Option<PathBuf>,
+    pub(crate) is_tree: bool,
+}
+
 pub(crate) trait DeltaProvider<C> {
     fn delta_changes(&self, commit: &C) -> Result<Vec<FileDiffChange>>;
+
+    fn delta_changes_filtered<F>(&self, commit: &C, _include: F) -> Result<Vec<FileDiffChange>>
+    where
+        F: FnMut(&FileDiffChangeMeta) -> bool,
+    {
+        self.delta_changes(commit)
+    }
 }
 
 fn parse_change_location(
@@ -67,6 +81,43 @@ pub(crate) fn compute_file_diff_changes(
     old_tree: Option<&gix::Tree<'_>>,
     new_tree: &gix::Tree<'_>,
 ) -> Result<Vec<FileDiffChange>> {
+    compute_file_diff_changes_filtered(repo, old_tree, new_tree, |_| true)
+}
+
+pub(crate) fn compute_file_diff_change_metadata(
+    repo: &Gix,
+    old_tree: Option<&gix::Tree<'_>>,
+    new_tree: &gix::Tree<'_>,
+) -> Result<Vec<FileDiffChangeMeta>> {
+    let mut diff_opts = gix::diff::Options::default();
+    diff_opts
+        .track_path()
+        .track_rewrites(Some(Default::default()));
+
+    let changes = repo.diff_tree_to_tree(old_tree, Some(new_tree), Some(diff_opts))?;
+
+    let mut out = Vec::new();
+    for change in changes {
+        let (is_tree, location, previous_location) = parse_change_location(&change);
+        out.push(FileDiffChangeMeta {
+            location,
+            previous_location,
+            is_tree,
+        });
+    }
+
+    Ok(out)
+}
+
+pub(crate) fn compute_file_diff_changes_filtered<F>(
+    repo: &Gix,
+    old_tree: Option<&gix::Tree<'_>>,
+    new_tree: &gix::Tree<'_>,
+    mut include: F,
+) -> Result<Vec<FileDiffChange>>
+where
+    F: FnMut(&FileDiffChangeMeta) -> bool,
+{
     let mut diff_opts = gix::diff::Options::default();
     diff_opts
         .track_path()
@@ -81,8 +132,18 @@ pub(crate) fn compute_file_diff_changes(
         let attached = change.attach(repo, repo);
 
         let (is_tree, location, previous_location) = parse_change_location(&change);
+        let meta = FileDiffChangeMeta {
+            location: location.clone(),
+            previous_location: previous_location.clone(),
+            is_tree,
+        };
 
         if is_tree {
+            resource_cache.clear_resource_cache_keep_allocation();
+            continue;
+        }
+
+        if !include(&meta) {
             resource_cache.clear_resource_cache_keep_allocation();
             continue;
         }

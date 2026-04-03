@@ -1,13 +1,18 @@
+use std::collections::HashSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{Result, eyre};
 use gix::{Commit, Id, ObjectId, Repository as Gix, discover};
 
-use super::diff_changes::{DeltaProvider, FileDiffChange, compute_file_diff_changes};
-use super::hotspot_aggregation::{
-    HotspotDelta, build_hotspots_from_commits, get_hotspot_deltas_for_commit,
+use super::diff_changes::{
+    DeltaProvider, FileDiffChange, FileDiffChangeMeta, compute_file_diff_change_metadata,
+    compute_file_diff_changes, compute_file_diff_changes_filtered,
 };
+use super::hotspot_aggregation::{
+    HotspotDelta, build_hotspots_from_commits, get_hotspot_deltas_for_commit_filtered,
+};
+use super::path_continuity::{PathAliases, register_path_alias, resolve_canonical_path};
 use crate::models::hotspot::Hotspot;
 use crate::models::hotspot_source::HotspotSource;
 
@@ -68,8 +73,15 @@ impl GixRepository {
         Ok(self.repo.find_commit(object_id)?.tree()?)
     }
 
-    fn get_hotspot_deltas(&self, commit: &Commit) -> Result<Vec<HotspotDelta>> {
-        get_hotspot_deltas_for_commit(self.get_path(), self, commit)
+    fn get_hotspot_deltas_filtered(
+        &self,
+        commit: &Commit,
+        head_paths: &HashSet<String>,
+        aliases: &PathAliases,
+    ) -> Result<Vec<HotspotDelta>> {
+        get_hotspot_deltas_for_commit_filtered(self.get_path(), self, commit, |change| {
+            self.is_change_relevant(change, head_paths, aliases)
+        })
     }
 
     fn head_tree(&self) -> Result<gix::Tree<'_>> {
@@ -80,6 +92,90 @@ impl GixRepository {
         Ok(head_tree
             .lookup_entry_by_path(Path::new(location))?
             .is_some())
+    }
+
+    fn collect_head_paths_recursive(
+        &self,
+        tree: &gix::Tree<'_>,
+        prefix: Option<&Path>,
+        out: &mut HashSet<String>,
+    ) -> Result<()> {
+        for entry in tree.iter() {
+            let entry = entry?;
+            let filename =
+                PathBuf::from(String::from_utf8_lossy(entry.filename().as_ref()).into_owned());
+            let joined = match prefix {
+                Some(base) => base.join(filename),
+                None => filename,
+            };
+
+            if entry.mode().is_tree() {
+                let object = entry.object()?;
+                let subtree = object.try_into_tree()?;
+                self.collect_head_paths_recursive(&subtree, Some(&joined), out)?;
+            } else {
+                out.insert(joined.to_string_lossy().to_string());
+            }
+        }
+        Ok(())
+    }
+
+    fn head_paths(&self) -> Result<HashSet<String>> {
+        let head_tree = self.head_tree()?;
+        let mut out = HashSet::new();
+        self.collect_head_paths_recursive(&head_tree, None, &mut out)?;
+        Ok(out)
+    }
+
+    fn build_rewrite_aliases(&self, commits: &[Commit<'_>]) -> Result<PathAliases> {
+        let mut aliases = PathAliases::new();
+
+        for commit in commits {
+            let new_tree = self.tree_for_commit_hash(commit.id)?;
+            let old_tree = match GixRepository::selected_parent_id(commit) {
+                Some(parent_hash) => Some(self.tree_for_commit_hash(parent_hash)?),
+                None => None,
+            };
+
+            let changes =
+                compute_file_diff_change_metadata(&self.repo, old_tree.as_ref(), &new_tree)?;
+            for change in changes {
+                if let Some(previous) = change.previous_location {
+                    let old_path = previous.to_string_lossy().to_string();
+                    let new_path = change.location.to_string_lossy().to_string();
+                    register_path_alias(&mut aliases, &old_path, &new_path);
+                }
+            }
+        }
+
+        Ok(aliases)
+    }
+
+    fn is_change_relevant(
+        &self,
+        change: &FileDiffChangeMeta,
+        head_paths: &HashSet<String>,
+        aliases: &PathAliases,
+    ) -> bool {
+        if change.is_tree {
+            return false;
+        }
+
+        let location = change.location.to_string_lossy().to_string();
+        let canonical_location = resolve_canonical_path(&location, aliases);
+        if head_paths.contains(&canonical_location) {
+            return true;
+        }
+
+        if let Some(previous) = &change.previous_location {
+            let previous = previous.to_string_lossy().to_string();
+            let canonical_previous = resolve_canonical_path(&previous, aliases);
+            if head_paths.contains(&canonical_previous) {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
@@ -93,14 +189,33 @@ impl DeltaProvider<Commit<'_>> for GixRepository {
 
         compute_file_diff_changes(&self.repo, old_tree.as_ref(), &new_tree)
     }
+
+    fn delta_changes_filtered<F>(
+        &self,
+        commit: &Commit<'_>,
+        include: F,
+    ) -> Result<Vec<FileDiffChange>>
+    where
+        F: FnMut(&FileDiffChangeMeta) -> bool,
+    {
+        let new_tree = self.tree_for_commit_hash(commit.id)?;
+        let old_tree = match GixRepository::selected_parent_id(commit) {
+            Some(parent_hash) => Some(self.tree_for_commit_hash(parent_hash)?),
+            None => None,
+        };
+
+        compute_file_diff_changes_filtered(&self.repo, old_tree.as_ref(), &new_tree, include)
+    }
 }
 
 impl HotspotSource for GixRepository {
     fn hotspots(&self, max_commits: usize) -> Result<Vec<Hotspot>> {
         let commits = self.get_commits()?;
+        let head_paths = self.head_paths()?;
+        let aliases = self.build_rewrite_aliases(&commits)?;
         let hotspots =
             build_hotspots_from_commits(&commits, self.get_path(), max_commits, |commit| {
-                self.get_hotspot_deltas(commit)
+                self.get_hotspot_deltas_filtered(commit, &head_paths, &aliases)
             })?;
 
         let head_tree = self.head_tree()?;
