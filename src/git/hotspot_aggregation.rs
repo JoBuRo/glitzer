@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::Result;
+use chrono::{DateTime, FixedOffset, TimeZone, Utc};
+use color_eyre::eyre::{Result, eyre};
 use gix::Commit;
 
 use super::diff_changes::{DeltaProvider, FileDiffChangeMeta};
@@ -22,7 +23,7 @@ pub(crate) struct CommitMetadata {
     author_name: String,
     author_email: String,
     authored_time_seconds: i64,
-    committed_at: String,
+    committed_at: DateTime<FixedOffset>,
     message_title: String,
 }
 
@@ -33,15 +34,26 @@ pub(crate) trait CommitLike {
 impl CommitLike for Commit<'_> {
     fn metadata(&self) -> Result<CommitMetadata> {
         let author_signature = self.author()?.to_owned()?;
+        let committer_signature = self.committer()?.to_owned()?;
         Ok(CommitMetadata {
             short_id: self.short_id()?.to_string(),
             author_name: author_signature.name.to_string(),
             author_email: author_signature.email.to_string(),
             authored_time_seconds: author_signature.time.seconds,
-            committed_at: self.committer()?.time.to_string(),
+            committed_at: datetime_from_gix_time(committer_signature.time)?,
             message_title: self.message()?.title.to_string(),
         })
     }
+}
+
+fn datetime_from_gix_time(time: gix::date::Time) -> Result<DateTime<FixedOffset>> {
+    let offset = FixedOffset::east_opt(time.offset)
+        .ok_or_else(|| eyre!("invalid commit time offset: {}", time.offset))?;
+    let datetime_utc = Utc
+        .timestamp_opt(time.seconds, 0)
+        .single()
+        .ok_or_else(|| eyre!("invalid commit timestamp: {}", time.seconds))?;
+    Ok(datetime_utc.with_timezone(&offset))
 }
 
 impl HotspotDelta {
@@ -110,7 +122,10 @@ fn apply_delta_to_hotspot(
             .push(crate::models::hotspot::CommitEvidence {
                 hash: commit_metadata.short_id.clone(),
                 author: commit_metadata.author_name.clone(),
-                committed_at: commit_metadata.committed_at.clone(),
+                committed_at: commit_metadata
+                    .committed_at
+                    .format("%Y-%m-%d %H:%M %:z")
+                    .to_string(),
                 message: commit_metadata.message_title.clone(),
                 lines_touched: changed_lines,
             });
@@ -221,12 +236,15 @@ mod tests {
     }
 
     fn commit_metadata(short_id: &str, author: &str, email: &str) -> CommitMetadata {
+        let committed_at = chrono::DateTime::from_timestamp(1_234, 0).expect("valid timestamp");
+        let zero_offset = chrono::FixedOffset::east_opt(0).expect("valid zero offset");
+
         CommitMetadata {
             short_id: short_id.to_string(),
             author_name: author.to_string(),
             author_email: email.to_string(),
             authored_time_seconds: chrono::Utc::now().timestamp(),
-            committed_at: "1234 +0000".to_string(),
+            committed_at: committed_at.with_timezone(&zero_offset),
             message_title: format!("msg-{}", short_id),
         }
     }
