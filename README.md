@@ -6,7 +6,10 @@ Glitzer is a Rust TUI that helps you find refactoring hotspots in a Git reposito
 
 It analyzes Git history, ranks files by change-based risk signals, and shows the evidence behind the ranking so you can decide where to look first.
 
-[![Build](https://github.com/JoBuRo/glitzer/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/JoBuRo/glitzer/actions/workflows/rust.yml)
+[![Build](https://github.com/JoBuRo/glitzer/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JoBuRo/glitzer/actions/workflows/ci.yml)
+![Release](https://img.shields.io/github/v/release/JoBuRo/glitzer)
+![CratesIO](https://img.shields.io/crates/v/glitzer)
+![License](https://img.shields.io/github/license/JoBuRo/glitzer)
 
 ![Glitzer screenshot](docs/tapes/demo.png)
 
